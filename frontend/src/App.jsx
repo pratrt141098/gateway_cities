@@ -59,6 +59,7 @@ export default function App() {
   const [mapStats, setMapStats] = useState([])
   const [loading, setLoading] = useState(true)
   const [cityQuery, setCityQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
   const [topN, setTopN] = useState(15)
   const [gatewayOnly, setGatewayOnly] = useState(false)
 
@@ -112,8 +113,12 @@ export default function App() {
 
   const filteredCities = useMemo(() => {
     const q = cityQuery.trim().toLowerCase()
-    if (!q) return []
-    return cities.filter(c => c.city.toLowerCase().includes(q)).slice(0, 12)
+    const sorted = [...cities].sort((a, b) => {
+      if (a.city_type === b.city_type) return a.city.localeCompare(b.city)
+      return a.city_type === 'gateway' ? -1 : 1
+    })
+    if (!q) return sorted
+    return sorted.filter(c => c.city.toLowerCase().includes(q))
   }, [cities, cityQuery])
 
   const gatewayCitySet = useMemo(() => {
@@ -176,24 +181,31 @@ export default function App() {
               placeholder="Search cities..."
               value={cityQuery}
               onChange={(e) => setCityQuery(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
             />
 
-            {cityQuery.trim() && (
+            {searchFocused && (
               <div className="city-search-dropdown">
                 {filteredCities.length > 0 ? (
-                  filteredCities.map(c => (
-                    <button
-                      key={`${c.city}-${c.city_type}-search`}
-                      className={`city-search-result ${selectedCities.includes(c.city) ? 'active' : ''}`}
-                      onClick={() => {
-                        toggleCity(c.city)
-                        setCityQuery('')
-                      }}
-                    >
-                      <span className={`search-dot ${c.city_type}`}>●</span>
-                      {c.city}
-                    </button>
-                  ))
+                  <>
+                    {!cityQuery.trim() && (
+                      <div className="city-search-section-label">All cities</div>
+                    )}
+                    {filteredCities.map(c => (
+                      <button
+                        key={`${c.city}-${c.city_type}-search`}
+                        className={`city-search-result ${selectedCities.includes(c.city) ? 'active' : ''}`}
+                        onClick={() => {
+                          toggleCity(c.city)
+                          setCityQuery('')
+                        }}
+                      >
+                        <span className={`search-dot ${c.city_type === 'gateway' ? 'gateway' : 'other'}`}>●</span>
+                        {c.city}
+                      </button>
+                    ))}
+                  </>
                 ) : (
                   <div className="city-search-empty">No matching cities</div>
                 )}
@@ -202,9 +214,27 @@ export default function App() {
           </div>
 
           {selectedCities.length > 0 && (
-            <button className="clear-btn" onClick={() => setSelectedCities([])}>
-              Clear selection
-            </button>
+            <div className="selected-cities-list">
+              {selectedCities.map(city => {
+                const cityData = cities.find(c => c.city === city)
+                return (
+                  <div key={city} className="selected-city-tag">
+                    <span className={`search-dot ${cityData?.city_type === 'gateway' ? 'gateway' : 'other'}`}>●</span>
+                    <span className="selected-city-name">{city}</span>
+                    <button
+                      className="selected-city-remove"
+                      onClick={() => toggleCity(city)}
+                      aria-label={`Remove ${city}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+              <button className="clear-btn" onClick={() => setSelectedCities([])}>
+                Clear all
+              </button>
+            </div>
           )}
         </aside>
 

@@ -94,8 +94,50 @@ body {
 .city-btn.other { border-left: 3px solid #bfc4cf; }
 .city-btn.benchmark { border-left: 3px solid #f0a64a; }
 
+.selected-cities-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.selected-city-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1b1d36;
+  border: 1px solid #3b4371;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+  color: #fff;
+}
+
+.selected-city-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-city-remove {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.selected-city-remove:hover {
+  color: #fff;
+}
+
 .clear-btn {
-  margin-top: 0.75rem;
+  margin-top: 0.25rem;
   width: 100%;
   padding: 0.4rem;
   background: #2a2a3a;
@@ -338,6 +380,14 @@ body {
   color: #b7bfd8;
   padding: 10px 12px;
   font-size: 0.92rem;
+}
+
+.city-search-section-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #555;
+  padding: 6px 12px 4px;
 }
 
 .search-dot {
