@@ -59,10 +59,13 @@ def time_series():
     city   = request.args.get("city")
     metric = request.args.get("metric", "fb_pct")
     return jsonify(data_store.get_time_series(city=city, metric=metric))
-
+import os
+print("RUNNING FILE:", os.path.abspath(__file__))
+print("URL MAP:", app.url_map)
 
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 3000))
     print(f"Running at http://localhost:{port}")
     app.run(host="0.0.0.0", port=port, debug=True)
+    

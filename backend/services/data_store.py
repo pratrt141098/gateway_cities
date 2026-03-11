@@ -85,13 +85,13 @@ def get_map_stats():
         df = df[df["year"] == df["year"].max()]
     cols = [c for c in ["city", "city_type", "fb_pct", "fb_count", "total_pop"] if c in df.columns]
     return _to_records(df[cols].drop_duplicates(subset=["city"]))
-
+'''
 def get_time_series(city: str = None, metric: str = "fb_pct"):
     METRIC_MAP = {
         "fb_pct":            ("foreign_born_core.parquet",   "fb_pct"),
         "unemployment_rate": ("employment_income.parquet",   "unemployment_rate"),
         "median_income":     ("employment_income.parquet",   "median_household_income"),
-        "poverty_rate":      ("employment_income.parquet",   "poverty_rate"),
+        "poverty_rate": ("poverty_by_nativity.parquet", "fb_poverty_pct"),
         "bachelors_pct":     ("education.parquet",           "bachelors_pct"),
         "homeownership_pct": ("homeownership.parquet",       "homeownership_pct"),
         "fb_income":         ("median_income.parquet",       "median_income_foreign_born"),
@@ -106,4 +106,43 @@ def get_time_series(city: str = None, metric: str = "fb_pct"):
     df = df[keep].dropna(subset=[col])
     df = df.rename(columns={col: "value"})
     df["metric"] = metric
+    return _to_records(df.sort_values(["city", "year"]))'''
+
+def get_time_series(city: str = None, metric: str = "fb_pct"):
+    METRIC_MAP = {
+        "fb_pct":            ("foreign_born_core.parquet",   "fb_pct"),
+        "unemployment_rate": ("employment_income.parquet",   "unemployment_rate"),
+        "median_income":     ("employment_income.parquet",   "median_household_income"),
+        "poverty_rate":      ("poverty_by_nativity.parquet",   "fb_poverty_pct"),
+        "bachelors_pct":     ("education.parquet",           "bachelors_pct"),
+        "homeownership_pct": ("homeownership.parquet",       "homeownership_pct"),
+        "fb_income":         ("median_income.parquet",       "median_income_foreign_born"),
+    }
+
+    BAD_VALUES = {-888888888, -666666666, -999999999}
+
+    if metric not in METRIC_MAP:
+        return []
+
+    filename, col = METRIC_MAP[metric]
+    df = _load(filename)
+
+    if city:
+        df = df[df["city"] == city]
+
+    keep = [c for c in ["city", "city_type", "year", "data_note", col] if c in df.columns]
+    df = df[keep].copy()
+
+    # Convert metric column to numeric safely
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Replace sentinel missing values with NaN
+    df[col] = df[col].replace(list(BAD_VALUES), np.nan)
+
+    # Drop missing / invalid values
+    df = df.dropna(subset=[col])
+
+    df = df.rename(columns={col: "value"})
+    df["metric"] = metric
+
     return _to_records(df.sort_values(["city", "year"]))
