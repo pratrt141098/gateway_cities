@@ -5,6 +5,8 @@ RAW     = Path("data/raw")
 INTERIM = Path("data/interim")
 INTERIM.mkdir(exist_ok=True)
 
+CITY_YEARS = [2020, 2021, 2022, 2023, 2024]
+
 CITY_FIPS = {
     "Attleboro":   "1600000US2502690",
     "Barnstable":  "1600000US2503690",
@@ -50,34 +52,46 @@ CITY_TYPE = {
 }
 
 FILES = {
-    "dp03":   "ACSDP5Y2024.DP03-Data.csv",
-    "b05001": "ACSDT5Y2024.B05001-Data.csv",
-    "b05002": "ACSDT5Y2024.B05002-Data.csv",
-    "b05003": "ACSDT5Y2024.B05003-Data.csv",
-    "b05006": "ACSDT5Y2024.B05006-Data.csv",
-    "b05010": "ACSDT5Y2024.B05010-Data.csv",
-    "b06011": "ACSDT5Y2024.B06011-Data.csv",
-    "b15002": "ACSDT5Y2024.B15002-Data.csv",
-    "b25003": "ACSDT5Y2024.B25003-Data.csv",
-    "s0501":  "ACSST5Y2024.S0501-Data.csv",
+    "dp03":   "ACSDP5Y{year}.DP03-Data.csv",
+    "b05001": "ACSDT5Y{year}.B05001-Data.csv",
+    "b05002": "ACSDT5Y{year}.B05002-Data.csv",
+    "b05003": "ACSDT5Y{year}.B05003-Data.csv",
+    "b05006": "ACSDT5Y{year}.B05006-Data.csv",
+    "b05010": "ACSDT5Y{year}.B05010-Data.csv",
+    "b06011": "ACSDT5Y{year}.B06011-Data.csv",
+    "b15002": "ACSDT5Y{year}.B15002-Data.csv",
+    "b25003": "ACSDT5Y{year}.B25003-Data.csv",
+    "s0501":  "ACSST5Y{year}.S0501-Data.csv",
 }
 
 fips_to_city = {v: k for k, v in CITY_FIPS.items()}
 target_fips  = set(CITY_FIPS.values())
 
-for table, fname in FILES.items():
-    df = pd.read_csv(RAW / fname, header=0, skiprows=[1], encoding="utf-8-sig")
-    df.columns = df.columns.str.strip().str.replace('"', '')
-    df["GEO_ID"] = df["GEO_ID"].str.strip()
-    df = df[df["GEO_ID"].isin(target_fips)].copy()
-    margin_cols = [c for c in df.columns if c.endswith("M") and c != "NAME"]
-    df = df.drop(columns=margin_cols)
-    df["city"]      = df["GEO_ID"].map(fips_to_city)
-    df["city_type"] = df["city"].map(CITY_TYPE)
-    df["year"]      = 2024
-    out = INTERIM / f"{table}.parquet"
-    df.to_parquet(out, index=False)
-    print(f"✓ {table}: {len(df)} cities → {out}")
-    print(f"  cities: {sorted(df['city'].dropna().tolist())}")
+for year in CITY_YEARS:
+    print(f"\n=== Processing ACS 5-year data for {year} ===")
+    for table, template in FILES.items():
+        fname = template.format(year=year)
+        csv_path = RAW / fname
+        if not csv_path.exists():
+            print(f"  ⚠ Skipping {table} for {year}: {csv_path} not found")
+            continue
+        df = pd.read_csv(csv_path, header=0, skiprows=[1], encoding="utf-8-sig")
+        df.columns = df.columns.str.strip().str.replace('"', '')
+        df["GEO_ID"] = df["GEO_ID"].str.strip()
+        df = df[df["GEO_ID"].isin(target_fips)].copy()
+        margin_cols = [c for c in df.columns if c.endswith("M") and c != "NAME"]
+        df = df.drop(columns=margin_cols)
+        df["city"]      = df["GEO_ID"].map(fips_to_city)
+        df["city_type"] = df["city"].map(CITY_TYPE)
+        df["year"]      = year
 
-print("\nDone. Check data/interim/")
+        out = INTERIM / f"{table}.parquet"
+        if out.exists():
+            existing = pd.read_parquet(out)
+            df = pd.concat([existing, df], ignore_index=True)
+
+        df.to_parquet(out, index=False)
+        print(f"  ✓ {table} {year}: {len(df)} rows → {out}")
+        print(f"    cities: {sorted(df['city'].dropna().unique().tolist())}")
+
+print("\nDone. Check data/interim/ for multi-year tables.")

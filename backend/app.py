@@ -1,6 +1,12 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from services import data_store
+from dotenv import load_dotenv
+from services import data_store, chatbot
+from pathlib import Path
+
+# Always load the repo-root .env (works even when running from /backend)
+_ROOT_ENV = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(dotenv_path=_ROOT_ENV, override=False)
 
 app = Flask(__name__)
 CORS(app)
@@ -52,6 +58,19 @@ def median_income():
 @app.get("/api/map-stats")
 def map_stats():
     return jsonify(data_store.get_map_stats())
+
+
+@app.post("/api/chat")
+def chat():
+    payload = request.get_json(silent=True) or {}
+    question = (payload.get("question") or "").strip()
+    resp = chatbot.answer_question(question)
+    return jsonify(
+        {
+            "answer": resp.answer,
+            "facts": resp.facts,
+        }
+    )
 
 if __name__ == "__main__":
     import os

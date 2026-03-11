@@ -4,3 +4,5 @@ pandas==3.0.1
 pyarrow==23.0.1
 numpy==2.4.3
 python-dotenv==1.2.2
+google-genai
+faiss-cpu

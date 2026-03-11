@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchCities, fetchForeignBorn, fetchMapStats } from './api/cities'
+import { sendChat } from './api/chat'
 import './App.css'
 import PerCapitaComparison from './components/PerCapitaComparison'
 import CityProfile from './components/CityProfile'
@@ -14,6 +15,10 @@ export default function App() {
   const [foreignBorn, setForeignBorn] = useState([])
   const [mapStats, setMapStats] = useState([])
   const [loading, setLoading] = useState(true)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const chatEndRef = useRef(null)
 
   useEffect(() => {
     fetchCities().then(data => {
@@ -25,6 +30,10 @@ export default function App() {
   useEffect(() => {
     fetchMapStats().then(setMapStats)
   }, [])
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatLoading])
 
   useEffect(() => {
     if (selectedCities.length === 0) {
@@ -49,7 +58,7 @@ export default function App() {
     <div className="app">
       <header className="header">
         <h1>Gateway Cities: Foreign-Born Population</h1>
-        <p>ACS 5-Year Estimates · Massachusetts · 2024</p>
+        <p>ACS 5-year estimates (2020–2024 period) · Massachusetts</p>
       </header>
 
       <div className="layout">
@@ -80,7 +89,7 @@ export default function App() {
 
         <main className="main">
           <div className="tabs">
-            {['Overview', 'Per Capita Comparison', 'City Profile', 'Origins', 'Map'].map(tab => (
+            {['Overview', 'Per Capita Comparison', 'City Profile', 'Origins', 'Map', 'Chatbot'].map(tab => (
               <button
                 key={tab}
                 className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
@@ -93,10 +102,36 @@ export default function App() {
 
           {activeTab === 'Overview' && (
             <>
-              <h2>
-                Foreign-Born % of Population
-                {selectedCities.length > 0 ? ` — ${selectedCities.join(', ')}` : ' — All Cities'}
-              </h2>
+              <div className="overview-header">
+                <div>
+                  <h2>
+                    Foreign-Born % of Population
+                    {selectedCities.length > 0 ? ` — ${selectedCities.join(', ')}` : ' — All Cities'}
+                  </h2>
+                  <p className="source-note">
+                    Source: American Community Survey 5-year estimates, most recent period
+                  </p>
+                </div>
+                <button
+                  className="download-btn"
+                  onClick={() => {
+                    const csvHeader = ['city', 'city_type', 'fb_pct'].join(',')
+                    const rows = sorted.map(d =>
+                      [d.city, d.city_type, d.fb_pct?.toFixed(3) ?? ''].join(',')
+                    )
+                    const blob = new Blob([csvHeader + '\n' + rows.join('\n')], { type: 'text/csv' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = 'foreign_born_overview.csv'
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                >
+                  Download CSV
+                </button>
+              </div>
+
               <div className="bar-chart">
                 {sorted.map(d => (
                   <div key={d.city} className="bar-row">
@@ -145,6 +180,93 @@ export default function App() {
                 onCityClick={toggleCity}
               />
             </>
+          )}
+
+          {activeTab === 'Chatbot' && (
+            <div className="chat-panel">
+              <div className="chat-header">
+                <h2>ACS Assistant</h2>
+                <p className="chat-subtitle">Ask about foreign-born population, income, origins & more. Data: ACS 5-year estimates.</p>
+              </div>
+
+              <div className="chat-messages">
+                {chatMessages.length === 0 && (
+                  <div className="chat-welcome">
+                    <p>Ask anything about Massachusetts gateway cities.</p>
+                    <p className="chat-welcome-hint">e.g. “What share of Boston residents are foreign-born?” or “Compare Lowell and Worcester.”</p>
+                  </div>
+                )}
+                {chatMessages.map((msg, i) => (
+                  <div key={i} className={`chat-bubble ${msg.role}`}>
+                    {msg.role === 'user' ? (
+                      <span className="chat-bubble-text">{msg.content}</span>
+                    ) : (
+                      <span className="chat-bubble-text">{msg.content}</span>
+                    )}
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div className="chat-bubble assistant">
+                    <span className="chat-typing">
+                      <span className="chat-typing-dot" />
+                      <span className="chat-typing-dot" />
+                      <span className="chat-typing-dot" />
+                    </span>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              <div className="chat-input-wrap">
+                <textarea
+                  className="chat-input"
+                  rows={1}
+                  placeholder="Ask a question…"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      if (chatInput.trim() && !chatLoading) {
+                        const q = chatInput.trim()
+                        setChatMessages((prev) => [...prev, { role: 'user', content: q }])
+                        setChatInput('')
+                        setChatLoading(true)
+                        sendChat(q)
+                          .then((data) => {
+                            setChatMessages((prev) => [...prev, { role: 'assistant', content: data.answer || '' }])
+                          })
+                          .catch(() => {
+                            setChatMessages((prev) => [...prev, { role: 'assistant', content: 'Chat request failed. Make sure the backend is running.' }])
+                          })
+                          .finally(() => setChatLoading(false))
+                      }
+                    }
+                  }}
+                />
+                <button
+                  className="chat-send-btn"
+                  disabled={chatLoading || !chatInput.trim()}
+                  onClick={async () => {
+                    const q = chatInput.trim()
+                    if (!q) return
+                    setChatMessages((prev) => [...prev, { role: 'user', content: q }])
+                    setChatInput('')
+                    setChatLoading(true)
+                    try {
+                      const data = await sendChat(q)
+                      setChatMessages((prev) => [...prev, { role: 'assistant', content: data.answer || '' }])
+                    } catch (err) {
+                      setChatMessages((prev) => [...prev, { role: 'assistant', content: 'Chat request failed. Make sure the backend is running.' }])
+                    } finally {
+                      setChatLoading(false)
+                    }
+                  }}
+                >
+                  Send
+                </button>
+              </div>
+            </div>
           )}
         </main>
 
