@@ -215,6 +215,9 @@ def _detect_intent(question: str) -> str:
         return "employment"
     if any(kw in q for kw in ("rent", "housing", "housing cost")):
         return "homeownership"
+    # Open-ended "why/how" questions that don't clearly map to a numeric ACS slice
+    if any(kw in q for kw in ("why ", "why are", "why is", "how come", "reasons for", "reason for")):
+        return "qualitative"
     return "foreign_born"
 
 
@@ -365,8 +368,10 @@ def _get_real_data(question: str) -> str:
             parts = [f"{r.get('city', '')} ({PERIOD_LABEL} ACS 5-year estimate)"]
             if r.get("fb_pct") is not None:
                 parts.append(f"foreign-born share {r['fb_pct']:.1f}%")
-            if r.get("fb_count") is not None and r.get("total_pop") is not None:
-                parts.append(f"({int(r['fb_count']):,} of {int(r['total_pop']):,} residents)")
+            # Use `foreign_born` count from processed foreign_born_core.parquet
+            fb_count = r.get("foreign_born", r.get("fb_count"))
+            if fb_count is not None and r.get("total_pop") is not None:
+                parts.append(f"({int(fb_count):,} of {int(r['total_pop']):,} residents)")
             if len(parts) > 1:
                 lines.append(" ".join(parts))
 
@@ -462,6 +467,10 @@ def _get_real_data(question: str) -> str:
 def _call_gemini(question: str, real_data: str, facts: List[Dict[str, Any]]) -> Optional[str]:
     api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     debug = os.environ.get("CHATBOT_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+    # High-level trace for when Gemini is invoked and with which intent.
+    if debug:
+        intent_dbg = _detect_intent(question)
+        print(f"[chatbot] Gemini called, intent={intent_dbg}, api_key={'SET' if api_key else 'MISSING'}")
     if (genai is None and genai_sdk is None) or not api_key:
         if debug:
             import sys
@@ -477,32 +486,54 @@ def _call_gemini(question: str, real_data: str, facts: List[Dict[str, Any]]) -> 
     verified = "\n".join(f"- {f['text']}" for f in facts) if facts else "(No RAG facts retrieved.)"
 
     intent = _detect_intent(question)
-    # FIX 5: single correct source table per intent
-    source_table = {
-        "origins": "B05006",
-        "income": "B06011",
-        "poverty": "B05010",
-        "education": "B15002",
-        "homeownership": "B25003",
-        "employment": "DP03",
-    }.get(intent, "S0501")
 
-    prompt = (
-        "REAL DATA (from our ACS CSV — use these numbers only):\n"
-        f"{real_data}\n\n"
-        "VERIFIED CONTEXT (RAG facts for additional context):\n"
-        f"{verified}\n\n"
-        f"QUESTION: {question}\n\n"
-        "RULES:\n"
-        "- Only use numbers from REAL DATA above. Never invent or estimate.\n"
-        f"- Never say 'in 2024'. Say 'based on the {PERIOD_LABEL} ACS 5-year estimate'.\n"
-        "- State the ACS period ONCE at the start only. Do NOT repeat it on every line.\n"
-        "- For comparisons: write one short paragraph per city.\n"
-        "- Write in journalist-friendly prose, not a raw data list.\n"
-        f"- End with EXACTLY ONE line: 'Source: ACS 5-year estimates, {source_table}.'\n"
-        "- Do NOT add any other 'Source:' lines anywhere in the response.\n"
-        "- If data is missing say: 'I don't have that data yet.' Do not guess.\n"
-    )
+    # Two prompt modes:
+    # 1) Data-driven ACS answers (origins, income, poverty, etc.)
+    # 2) Qualitative "why/how" questions that don't have direct table rows
+    if intent == "qualitative":
+        prompt = (
+            "CONTEXT FACTS (you may or may not need these):\n"
+            f"{verified}\n\n"
+            f"QUESTION: {question}\n\n"
+            "ROLE:\n"
+            "- You are a local reporter explaining possible reasons or context for this question.\n"
+            "- You do NOT have structured data for this question, only general background knowledge and the context facts above.\n\n"
+            "RULES:\n"
+            "- Give 2–4 short paragraphs explaining plausible reasons and context.\n"
+            "- Do NOT invent exact statistics or percentages.\n"
+            "- You may explain patterns and context but NEVER invent statistics, percentages, or citations.\n"
+            "- If you reference a number, it must come from the RAG facts provided above.\n"
+            "- Do NOT fabricate specific study names, years, or made-up reports.\n"
+            "- It is OK to speak in general terms (e.g., immigration patterns, neighborhood demographics, restaurant clustering).\n"
+            "- Do NOT add any 'Source:' line at the end.\n"
+        )
+    else:
+        # FIX 5: single correct source table per intent
+        source_table = {
+            "origins": "B05006",
+            "income": "B06011",
+            "poverty": "S0501",
+            "education": "B15002",
+            "homeownership": "B25003",
+            "employment": "DP03",
+        }.get(intent, "S0501")
+
+        prompt = (
+            "REAL DATA (from our ACS CSV — use these numbers only):\n"
+            f"{real_data}\n\n"
+            "VERIFIED CONTEXT (RAG facts for additional context):\n"
+            f"{verified}\n\n"
+            f"QUESTION: {question}\n\n"
+            "RULES:\n"
+            "- Only use numbers from REAL DATA above. Never invent or estimate.\n"
+            f"- Never say 'in 2024'. Say 'based on the {PERIOD_LABEL} ACS 5-year estimate'.\n"
+            "- State the ACS period ONCE at the start only. Do NOT repeat it on every line.\n"
+            "- For comparisons: write one short paragraph per city.\n"
+            "- Write in journalist-friendly prose, not a raw data list.\n"
+            f"- End with EXACTLY ONE line: 'Source: ACS 5-year estimates, {source_table}.'\n"
+            "- Do NOT add any other 'Source:' lines anywhere in the response.\n"
+            "- If data is missing say: 'I don't have that data yet.' Do not guess.\n"
+        )
 
     def _norm_model_name(name: str) -> str:
         # google-genai typically uses "models/<id>" while older SDK uses "<id>"
