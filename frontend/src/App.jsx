@@ -18,7 +18,37 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMinimized, setChatMinimized] = useState(false)
+  const [chatPos, setChatPos] = useState(() => ({ top: 48, left: window.innerWidth - 24 - 380 }))
+  const dragRef = useRef(null)
+  const reopenRef = useRef(null)
+  const didDragRef = useRef(false)
   const chatEndRef = useRef(null)
+
+  const makeDragHandler = (ref) => (e) => {
+    e.preventDefault()
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const offsetX = e.clientX - rect.left
+    const offsetY = e.clientY - rect.top
+    didDragRef.current = false
+
+    const onMove = (mv) => {
+      didDragRef.current = true
+      setChatPos({ top: mv.clientY - offsetY, left: mv.clientX - offsetX })
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  const handleDragStart = makeDragHandler(dragRef)
+  const handleReopenDragStart = makeDragHandler(reopenRef)
 
   useEffect(() => {
     fetchCities().then(data => {
@@ -89,7 +119,7 @@ export default function App() {
 
         <main className="main">
           <div className="tabs">
-            {['Overview', 'Per Capita Comparison', 'City Profile', 'Origins', 'Map', 'Chatbot'].map(tab => (
+            {['Overview', 'Per Capita Comparison', 'City Profile', 'Origins', 'Map'].map(tab => (
               <button
                 key={tab}
                 className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
@@ -163,8 +193,7 @@ export default function App() {
           )}
 
           {activeTab === 'Origins' && (
-            <CountryOrigins selectedCities={selectedCities}
-            />
+            <CountryOrigins selectedCities={selectedCities} />
           )}
 
           {activeTab === 'Map' && (
@@ -173,7 +202,6 @@ export default function App() {
               <p style={{ marginBottom: '12px', color: '#888', fontSize: '0.9rem' }}>
                 Loaded map rows: {mapStats.length}
               </p>
-
               <MapView
                 stats={mapStats}
                 selectedCities={selectedCities}
@@ -181,28 +209,51 @@ export default function App() {
               />
             </>
           )}
+        </main>
+      </div>
 
-          {activeTab === 'Chatbot' && (
-            <div className="chat-panel">
-              <div className="chat-header">
-                <h2>ACS Assistant</h2>
-                <p className="chat-subtitle">Ask about foreign-born population, income, origins & more. Data: ACS 5-year estimates.</p>
-              </div>
+      {/* Floating chat window */}
+      {chatOpen && (
+        <div
+          ref={dragRef}
+          className={`chat-float-panel ${chatMinimized ? 'minimized' : ''}`}
+          style={{ top: chatPos.top, left: chatPos.left, right: 'auto' }}
+        >
+          <div className="chat-float-header" onMouseDown={handleDragStart}>
+            <div className="chat-float-title">
+              <span className="chat-float-icon">💬</span>
+              <span>ACS Assistant</span>
+            </div>
+            <div className="chat-float-controls">
+              <button
+                className="chat-ctrl-btn"
+                title={chatMinimized ? 'Expand' : 'Minimize'}
+                onClick={() => setChatMinimized(v => !v)}
+              >
+                {chatMinimized ? '▲' : '▼'}
+              </button>
+              <button
+                className="chat-ctrl-btn"
+                title="Close"
+                onClick={() => { setChatOpen(false); setChatMinimized(false) }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
 
+          {!chatMinimized && (
+            <>
               <div className="chat-messages">
                 {chatMessages.length === 0 && (
                   <div className="chat-welcome">
                     <p>Ask anything about Massachusetts gateway cities.</p>
-                    <p className="chat-welcome-hint">e.g. “What share of Boston residents are foreign-born?” or “Compare Lowell and Worcester.”</p>
+                    <p className="chat-welcome-hint">e.g. "What share of Boston residents are foreign-born?" or "Compare Lowell and Worcester."</p>
                   </div>
                 )}
                 {chatMessages.map((msg, i) => (
                   <div key={i} className={`chat-bubble ${msg.role}`}>
-                    {msg.role === 'user' ? (
-                      <span className="chat-bubble-text">{msg.content}</span>
-                    ) : (
-                      <span className="chat-bubble-text">{msg.content}</span>
-                    )}
+                    <span className="chat-bubble-text">{msg.content}</span>
                   </div>
                 ))}
                 {chatLoading && (
@@ -263,14 +314,28 @@ export default function App() {
                     }
                   }}
                 >
-                  Send
+                  ➤
                 </button>
               </div>
-            </div>
+            </>
           )}
-        </main>
+        </div>
+      )}
 
-      </div>
+      {/* Reopen button shown when chat is closed */}
+      {!chatOpen && (
+        <button
+          ref={reopenRef}
+          className="chat-reopen-btn"
+          style={{ top: chatPos.top, left: chatPos.left, right: 'auto' }}
+          onMouseDown={handleReopenDragStart}
+          onClick={() => { if (!didDragRef.current) { setChatOpen(true); setChatMinimized(false) } }}
+          title="Open ACS Assistant"
+        >
+          <span className="chat-reopen-icon">💬</span>
+          <span className="chat-reopen-label">ACS Assistant</span>
+        </button>
+      )}
     </div>
   )
 }

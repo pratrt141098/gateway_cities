@@ -464,7 +464,7 @@ def _get_real_data(question: str) -> str:
 
 
 # ── Gemini writer ─────────────────────────────────────────────────────────────
-def _call_gemini(question: str, real_data: str, facts: List[Dict[str, Any]]) -> Optional[str]:
+def _call_gemini(question: str, real_data: str, facts: List[Dict[str, Any]], use_search: bool = False) -> Optional[str]:
     api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     debug = os.environ.get("CHATBOT_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
     # High-level trace for when Gemini is invoked and with which intent.
@@ -490,22 +490,20 @@ def _call_gemini(question: str, real_data: str, facts: List[Dict[str, Any]]) -> 
     # Two prompt modes:
     # 1) Data-driven ACS answers (origins, income, poverty, etc.)
     # 2) Qualitative "why/how" questions that don't have direct table rows
-    if intent == "qualitative":
+    if intent == "qualitative" or use_search:
         prompt = (
-            "CONTEXT FACTS (you may or may not need these):\n"
+            "CONTEXT FACTS (from local ACS dataset):\n"
             f"{verified}\n\n"
             f"QUESTION: {question}\n\n"
             "ROLE:\n"
-            "- You are a local reporter explaining possible reasons or context for this question.\n"
-            "- You do NOT have structured data for this question, only general background knowledge and the context facts above.\n\n"
+            "- You are a knowledgeable analyst on Massachusetts immigration and Gateway Cities.\n"
+            "- You have access to Google Search — use it to find current, accurate external information.\n\n"
             "RULES:\n"
-            "- Give 2–4 short paragraphs explaining plausible reasons and context.\n"
-            "- Do NOT invent exact statistics or percentages.\n"
-            "- You may explain patterns and context but NEVER invent statistics, percentages, or citations.\n"
-            "- If you reference a number, it must come from the RAG facts provided above.\n"
-            "- Do NOT fabricate specific study names, years, or made-up reports.\n"
-            "- It is OK to speak in general terms (e.g., immigration patterns, neighborhood demographics, restaurant clustering).\n"
-            "- Do NOT add any 'Source:' line at the end.\n"
+            "- Search the web for relevant context, recent news, policy, or historical background.\n"
+            "- Give 2–4 concise paragraphs with specific, sourced details.\n"
+            "- If you reference a statistic from the local ACS facts above, cite it as 'ACS 5-year estimate'.\n"
+            "- For web-sourced facts, cite the source inline (e.g., 'according to MassGov...').\n"
+            "- Do NOT fabricate statistics or citations not found via search.\n"
         )
     else:
         # FIX 5: single correct source table per intent
@@ -556,8 +554,21 @@ def _call_gemini(question: str, real_data: str, facts: List[Dict[str, Any]]) -> 
         # Prefer newer SDK if available.
         if genai_sdk is not None:
             try:
+                from google.genai import types as genai_types
                 client = genai_sdk.Client(api_key=api_key)
-                resp = client.models.generate_content(model=_norm_model_name(model_name), contents=prompt)
+                gen_config = None
+                if use_search:
+                    try:
+                        gen_config = genai_types.GenerateContentConfig(
+                            tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())]
+                        )
+                    except Exception:
+                        gen_config = None
+                resp = client.models.generate_content(
+                    model=_norm_model_name(model_name),
+                    contents=prompt,
+                    config=gen_config,
+                )
                 text = getattr(resp, "text", None)
                 if text and str(text).strip():
                     return str(text).strip()
@@ -614,7 +625,20 @@ def _call_gemini(question: str, real_data: str, facts: List[Dict[str, Any]]) -> 
                 print(f"[chatbot] Gemini available models (top picks): {top_names}", file=sys.stderr)
             for _, model_full_name in candidates[:10]:
                 try:
-                    resp = client.models.generate_content(model=_norm_model_name(model_full_name), contents=prompt)
+                    gen_config = None
+                    if use_search:
+                        try:
+                            from google.genai import types as genai_types
+                            gen_config = genai_types.GenerateContentConfig(
+                                tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())]
+                            )
+                        except Exception:
+                            gen_config = None
+                    resp = client.models.generate_content(
+                        model=_norm_model_name(model_full_name),
+                        contents=prompt,
+                        config=gen_config,
+                    )
                     text = getattr(resp, "text", None)
                     if text and str(text).strip():
                         if debug:
@@ -679,7 +703,9 @@ def answer_question(question: str) -> ChatResponse:
 
     facts = _retrieve_facts(question, allowed_files=allowed_files)
 
-    llm_answer = _call_gemini(question, real_data, facts)
+    # Use Google Search grounding for qualitative questions or when local data is empty
+    use_search = (intent == "qualitative") or ("(No matching rows" in real_data)
+    llm_answer = _call_gemini(question, real_data, facts, use_search=use_search)
     if llm_answer:
         return ChatResponse(answer=llm_answer, facts=facts)
 
