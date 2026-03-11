@@ -283,7 +283,10 @@ export default function App() {
           )}
 
           {activeTab === 'Origins' && (
-            <CountryOrigins selectedCities={selectedCities} />
+            <CountryOrigins
+              selectedCities={selectedCities}
+              allCities={cities}
+            />
           )}
 
           {activeTab === 'Map' && (
