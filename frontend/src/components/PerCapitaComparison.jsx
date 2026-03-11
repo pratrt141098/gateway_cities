@@ -17,6 +17,7 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
   const [data, setData] = useState([])
   const [metric, setMetric] = useState('fb_pct')
   const [loading, setLoading] = useState(false)
+  const [gatewayOnly, setGatewayOnly] = useState(false)
 
   const METRICS = [
     { key: 'fb_pct',             label: 'Foreign-Born %' },
@@ -59,6 +60,7 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
 
   const sorted = [...data]
     .filter(d => d[metric] != null)
+    .filter(d => !gatewayOnly || d.city_type === 'gateway')
     .sort((a, b) => b[metric] - a[metric])
 
   const selectedMetric = METRICS.find(m => m.key === metric)
@@ -66,7 +68,15 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
   return (
     <div>
       <div className="comparison-controls">
-        <h2>Per Capita Comparison — {selectedMetric.label}</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+          <h2 style={{ margin: 0 }}>Per Capita Comparison — {selectedMetric.label}</h2>
+          <button
+            className={`overview-toggle-btn ${gatewayOnly ? 'active' : ''}`}
+            onClick={() => setGatewayOnly(prev => !prev)}
+          >
+            {gatewayOnly ? 'Showing Gateway Only' : 'Show Gateway Only'}
+          </button>
+        </div>
         <div className="metric-pills">
           {METRICS.map(m => (
             <button
