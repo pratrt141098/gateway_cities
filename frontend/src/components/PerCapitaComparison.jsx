@@ -8,8 +8,9 @@ import { fetchForeignBorn, fetchEmploymentIncome, fetchEducation, fetchHomeowner
 
 const COLORS = {
   gateway: '#4e9af1',
-  comparison: '#f1a14e',
-  benchmark: '#a14ef1',
+  other: '#bfc4cf',
+  comparison: '#bfc4cf',
+  benchmark: '#bfc4cf',
 }
 
 export default function PerCapitaComparison({ selectedCities, allCities }) {
@@ -28,6 +29,7 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
   useEffect(() => {
     setLoading(true)
     const citiesToFetch = selectedCities.length > 0 ? selectedCities : allCities.map(c => c.city)
+    const cityTypeMap = Object.fromEntries(allCities.map(c => [c.city, c.city_type]))
 
     Promise.all([
       fetchForeignBorn(),
@@ -42,7 +44,7 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
         const ownRow = own.find(r => r.city === city) || {}
         return {
           city,
-          city_type: fbRow.city_type || 'gateway',
+          city_type: cityTypeMap[city] || 'other',
           fb_pct:               fbRow.fb_pct,
           unemployment_rate:    empRow.unemployment_rate,
           bachelors_pct:        eduRow.bachelors_pct,

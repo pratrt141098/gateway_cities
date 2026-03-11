@@ -146,7 +146,10 @@ export default function App() {
   const overviewData = (gatewayOnly
     ? sorted.filter(d => gatewayCitySet.has(d.city))
     : sorted
-  ).slice(0, topN)
+  ).slice(0, topN).map(d => ({
+    ...d,
+    city_type: d.city_type === 'benchmark' ? 'other' : d.city_type,
+  }))
 
   if (loading) return <div className="loading">Loading...</div>
 
@@ -164,7 +167,6 @@ export default function App() {
           <div className="city-type-group">
             <p className="type-label gateway">● Gateway Cities</p>
             <p className="type-label other">● Other</p>
-            <p className="type-label benchmark">● Benchmark Cities</p>
           </div>
 
           <div className="city-search-wrap">
