@@ -54,6 +54,10 @@ def median_income():
 def map_stats():
     return jsonify(data_store.get_map_stats())
 
+@app.get("/api/state-averages")
+def state_averages():
+    return jsonify(data_store.get_state_averages())
+
 @app.get("/api/time-series")
 def time_series():
     city   = request.args.get("city")

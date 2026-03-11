@@ -1,36 +1,49 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState } from "react";
 import {
-  RadarChart, Radar, PolarGrid, PolarAngleAxis,
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
-  Tooltip, Legend, CartesianGrid
-} from 'recharts'
-import { fetchForeignBorn, fetchEmploymentIncome, fetchEducation, fetchHomeownership } from '../api/cities'
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  CartesianGrid,
+} from "recharts";
+import {
+  fetchForeignBorn,
+  fetchEmploymentIncome,
+  fetchEducation,
+  fetchHomeownership,
+} from "../api/cities";
 
 const COLORS = {
-  gateway: '#4e9af1',
-  other: '#bfc4cf',
-  comparison: '#bfc4cf',
-  benchmark: '#bfc4cf',
-}
+  gateway: "#4e9af1",
+  other: "#bfc4cf",
+};
 
 export default function PerCapitaComparison({ selectedCities, allCities }) {
-  const [data, setData] = useState([])
-  const [metric, setMetric] = useState('fb_pct')
-  const [loading, setLoading] = useState(false)
-  const [gatewayOnly, setGatewayOnly] = useState(false)
+  const [data, setData] = useState([]);
+  const [metric, setMetric] = useState("fb_pct");
+  const [loading, setLoading] = useState(false);
+  const [gatewayOnly, setGatewayOnly] = useState(false);
 
   const METRICS = [
-    { key: 'fb_pct',             label: 'Foreign-Born %' },
-    { key: 'unemployment_rate',  label: 'Unemployment Rate %' },
-    { key: 'bachelors_pct',      label: "Bachelor's Degree %" },
-    { key: 'homeownership_pct',  label: 'Homeownership %' },
-    { key: 'median_household_income', label: 'Median Household Income' },
-  ]
+    { key: "fb_pct", label: "Foreign-Born %" },
+    { key: "unemployment_rate", label: "Unemployment Rate %" },
+    { key: "bachelors_pct", label: "Bachelor's Degree %" },
+    { key: "homeownership_pct", label: "Homeownership %" },
+    { key: "median_household_income", label: "Median Household Income" },
+  ];
 
   useEffect(() => {
-    setLoading(true)
-    const citiesToFetch = selectedCities.length > 0 ? selectedCities : allCities.map(c => c.city)
-    const cityTypeMap = Object.fromEntries(allCities.map(c => [c.city, c.city_type]))
+    setLoading(true);
+    const cityTypeMap = Object.fromEntries(
+      allCities.map((c) => [c.city, c.city_type]),
+    );
 
     Promise.all([
       fetchForeignBorn(),
@@ -38,50 +51,70 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
       fetchEducation(),
       fetchHomeownership(),
     ]).then(([fb, emp, edu, own]) => {
-      const merged = citiesToFetch.map(city => {
-        const fbRow  = fb.find(r => r.city === city) || {}
-        const empRow = emp.find(r => r.city === city) || {}
-        const eduRow = edu.find(r => r.city === city) || {}
-        const ownRow = own.find(r => r.city === city) || {}
+      const allUniqueCities = [
+        ...new Set([
+          ...fb.map((r) => r.city),
+          ...emp.map((r) => r.city),
+          ...edu.map((r) => r.city),
+          ...own.map((r) => r.city),
+        ]),
+      ];
+      const citiesToMerge =
+        selectedCities.length > 0 ? selectedCities : allUniqueCities;
+      const merged = citiesToMerge.map((city) => {
+        const fbRow = fb.find((r) => r.city === city) || {};
+        const empRow = emp.find((r) => r.city === city) || {};
+        const eduRow = edu.find((r) => r.city === city) || {};
+        const ownRow = own.find((r) => r.city === city) || {};
         return {
           city,
-          city_type: cityTypeMap[city] || 'other',
-          fb_pct:               fbRow.fb_pct,
-          unemployment_rate:    empRow.unemployment_rate,
-          bachelors_pct:        eduRow.bachelors_pct,
-          homeownership_pct:    ownRow.homeownership_pct,
+          city_type: cityTypeMap[city] || "other",
+          fb_pct: fbRow.fb_pct,
+          unemployment_rate: empRow.unemployment_rate,
+          bachelors_pct: eduRow.bachelors_pct,
+          homeownership_pct: ownRow.homeownership_pct,
           median_household_income: empRow.median_household_income,
-        }
-      })
-      setData(merged.filter(d => d[metric] != null))
-      setLoading(false)
-    })
-  }, [selectedCities, allCities])
+        };
+      });
+      setData(merged.filter((d) => d[metric] != null));
+      setLoading(false);
+    });
+  }, [selectedCities, allCities]);
 
   const sorted = [...data]
-    .filter(d => d[metric] != null)
-    .filter(d => !gatewayOnly || d.city_type === 'gateway')
-    .sort((a, b) => b[metric] - a[metric])
+    .filter((d) => d[metric] != null)
+    .filter((d) => !gatewayOnly || d.city_type === "gateway")
+    .sort((a, b) => b[metric] - a[metric]);
 
-  const selectedMetric = METRICS.find(m => m.key === metric)
+  const selectedMetric = METRICS.find((m) => m.key === metric);
 
   return (
     <div>
       <div className="comparison-controls">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-          <h2 style={{ margin: 0 }}>Per Capita Comparison — {selectedMetric.label}</h2>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            flexWrap: "wrap",
+            marginBottom: "0.75rem",
+          }}
+        >
+          <h2 style={{ margin: 0 }}>
+            Per Capita Comparison — {selectedMetric.label}
+          </h2>
           <button
-            className={`overview-toggle-btn ${gatewayOnly ? 'active' : ''}`}
-            onClick={() => setGatewayOnly(prev => !prev)}
+            className={`overview-toggle-btn ${gatewayOnly ? "active" : ""}`}
+            onClick={() => setGatewayOnly((prev) => !prev)}
           >
-            {gatewayOnly ? 'Showing Gateway Only' : 'Show Gateway Only'}
+            {gatewayOnly ? "Showing Gateway Only" : "Show Gateway Only"}
           </button>
         </div>
         <div className="metric-pills">
-          {METRICS.map(m => (
+          {METRICS.map((m) => (
             <button
               key={m.key}
-              className={`pill ${metric === m.key ? 'active' : ''}`}
+              className={`pill ${metric === m.key ? "active" : ""}`}
               onClick={() => setMetric(m.key)}
             >
               {m.label}
@@ -89,7 +122,9 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
           ))}
         </div>
         {selectedCities.length === 0 && (
-          <p className="hint">Showing all cities · Select cities in sidebar to filter</p>
+          <p className="hint">
+            Showing all cities · Select cities in sidebar to filter
+          </p>
         )}
       </div>
 
@@ -102,41 +137,66 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
             layout="vertical"
             margin={{ top: 10, right: 80, left: 110, bottom: 10 }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" horizontal={false} />
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="#2a2a3a"
+              horizontal={false}
+            />
             <XAxis
               type="number"
-              tick={{ fill: '#888', fontSize: 11 }}
-              tickFormatter={v => metric === 'median_household_income' ? `$${v.toLocaleString()}` : `${v.toFixed(1)}%`}
+              tick={{ fill: "#888", fontSize: 11 }}
+              tickFormatter={(v) =>
+                metric === "median_household_income"
+                  ? `$${v.toLocaleString()}`
+                  : `${v.toFixed(1)}%`
+              }
             />
             <YAxis
               type="category"
               dataKey="city"
-              tick={{ fill: '#ccc', fontSize: 11 }}
+              tick={{ fill: "#ccc", fontSize: 11 }}
               width={105}
             />
             <Tooltip
-              contentStyle={{ background: '#1e1f2e', border: '1px solid #2a2a3a', borderRadius: 6 }}
-              labelStyle={{ color: '#fff' }}
-              formatter={(v) => metric === 'median_household_income'
-                ? [`$${v.toLocaleString()}`, selectedMetric.label]
-                : [`${v.toFixed(1)}%`, selectedMetric.label]
+              contentStyle={{
+                background: "#1e1f2e",
+                border: "1px solid #2a2a3a",
+                borderRadius: 6,
+              }}
+              labelStyle={{ color: "#fff" }}
+              formatter={(v) =>
+                metric === "median_household_income"
+                  ? [`$${v.toLocaleString()}`, selectedMetric.label]
+                  : [`${v.toFixed(1)}%`, selectedMetric.label]
               }
             />
-            <Bar dataKey={metric} radius={[0, 4, 4, 0]}
+            <Bar
+              dataKey={metric}
+              radius={[0, 4, 4, 0]}
               fill="#4e9af1"
-              label={{ position: 'right', fill: '#aaa', fontSize: 11,
-                formatter: v => metric === 'median_household_income'
-                  ? `$${v.toLocaleString()}`
-                  : `${v?.toFixed(1)}%`
+              label={{
+                position: "right",
+                fill: "#aaa",
+                fontSize: 11,
+                formatter: (v) =>
+                  metric === "median_household_income"
+                    ? `$${v.toLocaleString()}`
+                    : `${v?.toFixed(1)}%`,
               }}
               shape={(props) => {
-                const { city_type } = props
-                return <rect {...props} fill={COLORS[city_type] || '#4e9af1'} rx={3} />
+                const { city_type } = props;
+                return (
+                  <rect
+                    {...props}
+                    fill={COLORS[city_type] || "#4e9af1"}
+                    rx={3}
+                  />
+                );
               }}
             />
           </BarChart>
         </ResponsiveContainer>
       )}
     </div>
-  )
+  );
 }

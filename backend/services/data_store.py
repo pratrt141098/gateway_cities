@@ -108,6 +108,44 @@ def get_time_series(city: str = None, metric: str = "fb_pct"):
     df["metric"] = metric
     return _to_records(df.sort_values(["city", "year"]))'''
 
+def get_state_averages():
+    """Compute weighted state-level averages from all places for the latest year."""
+    fb  = _load("foreign_born_core.parquet")
+    emp = _load("employment_income.parquet")
+    edu = _load("education.parquet")
+    own = _load("homeownership.parquet")
+
+    def _latest(df):
+        if "year" in df.columns:
+            df = df[df["year"] == df["year"].max()]
+        return df
+
+    fb  = _latest(fb)
+    emp = _latest(emp)
+    edu = _latest(edu)
+    own = _latest(own)
+
+    total_pop    = pd.to_numeric(fb["total_pop"],    errors="coerce").sum()
+    foreign_born = pd.to_numeric(fb["foreign_born"], errors="coerce").sum()
+    fb_pct = round(foreign_born / total_pop * 100, 1) if total_pop else None
+
+    unemployment_rate       = round(pd.to_numeric(emp["unemployment_rate"],       errors="coerce").median(), 1)
+    median_household_income = round(pd.to_numeric(emp["median_household_income"], errors="coerce").median())
+
+    bachelors_pct = round(pd.to_numeric(edu["bachelors_pct"], errors="coerce").median(), 1)
+
+    total_units  = pd.to_numeric(own["total_housing_units"], errors="coerce").sum()
+    owner_occ    = pd.to_numeric(own["owner_occupied"],      errors="coerce").sum()
+    homeownership_pct = round(owner_occ / total_units * 100, 1) if total_units else None
+
+    return {
+        "fb_pct":                  fb_pct,
+        "unemployment_rate":       unemployment_rate,
+        "median_household_income": median_household_income,
+        "bachelors_pct":           bachelors_pct,
+        "homeownership_pct":       homeownership_pct,
+    }
+
 def get_time_series(city: str = None, metric: str = "fb_pct"):
     METRIC_MAP = {
         "fb_pct":            ("foreign_born_core.parquet",   "fb_pct"),
