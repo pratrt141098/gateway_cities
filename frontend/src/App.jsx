@@ -7,21 +7,17 @@ import MapView from './components/MapView'
 import TrendsView from './components/TrendsView'
 import { fetchCities, fetchForeignBorn, fetchMapStats } from './api/cities'
 
-const normalizeCityType = (city, type) => {
+const normalizeCityType = (city) => {
   const cityName = String(city || '').trim()
-  const t = String(type || '').trim().toLowerCase()
-
-  if (GATEWAY_CITIES.has(cityName)) return 'gateway'
-  if (t === 'benchmark') return 'benchmark'
-  return 'other'
+  return GATEWAY_CITIES.has(cityName) ? 'gateway' : 'other'
 }
 
 const normalizeRows = (rows = []) =>
   rows.map(r => ({
     ...r,
-    city_type: normalizeCityType(r.city, r.city_type),
+    city_type: normalizeCityType(r.city),
   }))
-  
+
 const GATEWAY_CITIES = new Set([
   'Attleboro',
   'Barnstable',
@@ -59,6 +55,7 @@ export default function App() {
   const [mapStats, setMapStats] = useState([])
   const [loading, setLoading] = useState(true)
   const [cityQuery, setCityQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
   const [topN, setTopN] = useState(15)
   const [gatewayOnly, setGatewayOnly] = useState(false)
 
@@ -75,7 +72,10 @@ export default function App() {
 
         console.log('raw city types:', [...new Set(data.map(c => c.city_type))])
         console.log('normalized city types:', [...new Set(unique.map(c => c.city_type))])
-        console.log('gateway cities after normalize:', unique.filter(c => c.city_type === 'gateway').map(c => c.city))
+        console.log(
+          'gateway cities after normalize:',
+          unique.filter(c => c.city_type === 'gateway').map(c => c.city),
+        )
 
         setCities(unique)
         setLoading(false)
@@ -106,46 +106,36 @@ export default function App() {
 
   const toggleCity = (city) => {
     setSelectedCities(prev =>
-      prev.includes(city) ? prev.filter(c => c !== city) : [...prev, city]
+      prev.includes(city) ? prev.filter(c => c !== city) : [...prev, city],
     )
   }
 
   const filteredCities = useMemo(() => {
     const q = cityQuery.trim().toLowerCase()
-    if (!q) return []
-    return cities.filter(c => c.city.toLowerCase().includes(q)).slice(0, 12)
+    const sorted = [...cities].sort((a, b) => {
+      if (a.city_type === b.city_type) return a.city.localeCompare(b.city)
+      return a.city_type === 'gateway' ? -1 : 1
+    })
+
+    if (!q) return sorted
+    return sorted.filter(c => c.city.toLowerCase().includes(q))
   }, [cities, cityQuery])
 
   const gatewayCitySet = useMemo(() => {
     return new Set(
-      cities
-        .filter(c => c.city_type === 'gateway')
-        .map(c => c.city)
-    )
-  }, [cities])
-
-  const benchmarkCitySet = useMemo(() => {
-    return new Set(
-      cities
-        .filter(c => c.city_type === 'benchmark')
-        .map(c => c.city)
+      cities.filter(c => c.city_type === 'gateway').map(c => c.city),
     )
   }, [cities])
 
   const sorted = [...foreignBorn]
     .map(d => ({
       ...d,
-      city_type: gatewayCitySet.has(d.city)
-        ? 'gateway'
-        : benchmarkCitySet.has(d.city)
-        ? 'benchmark'
-        : 'other'
+      city_type: gatewayCitySet.has(d.city) ? 'gateway' : 'other',
     }))
     .sort((a, b) => (b.fb_pct ?? 0) - (a.fb_pct ?? 0))
 
-  const overviewData = (gatewayOnly
-    ? sorted.filter(d => gatewayCitySet.has(d.city))
-    : sorted
+  const overviewData = (
+    gatewayOnly ? sorted.filter(d => gatewayCitySet.has(d.city)) : sorted
   ).slice(0, topN)
 
   if (loading) return <div className="loading">Loading...</div>
@@ -164,7 +154,6 @@ export default function App() {
           <div className="city-type-group">
             <p className="type-label gateway">● Gateway Cities</p>
             <p className="type-label other">● Other</p>
-            <p className="type-label benchmark">● Benchmark Cities</p>
           </div>
 
           <div className="city-search-wrap">
@@ -174,24 +163,38 @@ export default function App() {
               placeholder="Search cities..."
               value={cityQuery}
               onChange={(e) => setCityQuery(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
             />
 
-            {cityQuery.trim() && (
+            {searchFocused && (
               <div className="city-search-dropdown">
                 {filteredCities.length > 0 ? (
-                  filteredCities.map(c => (
-                    <button
-                      key={`${c.city}-${c.city_type}-search`}
-                      className={`city-search-result ${selectedCities.includes(c.city) ? 'active' : ''}`}
-                      onClick={() => {
-                        toggleCity(c.city)
-                        setCityQuery('')
-                      }}
-                    >
-                      <span className={`search-dot ${c.city_type}`}>●</span>
-                      {c.city}
-                    </button>
-                  ))
+                  <>
+                    {!cityQuery.trim() && (
+                      <div className="city-search-section-label">
+                        All cities
+                      </div>
+                    )}
+
+                    {filteredCities.map(c => (
+                      <button
+                        key={`${c.city}-${c.city_type}-search`}
+                        className={`city-search-result ${selectedCities.includes(c.city) ? 'active' : ''}`}
+                        onClick={() => {
+                          toggleCity(c.city)
+                          setCityQuery('')
+                        }}
+                      >
+                        <span
+                          className={`search-dot ${c.city_type === 'gateway' ? 'gateway' : 'other'}`}
+                        >
+                          ●
+                        </span>
+                        {c.city}
+                      </button>
+                    ))}
+                  </>
                 ) : (
                   <div className="city-search-empty">No matching cities</div>
                 )}
@@ -200,9 +203,35 @@ export default function App() {
           </div>
 
           {selectedCities.length > 0 && (
-            <button className="clear-btn" onClick={() => setSelectedCities([])}>
-              Clear selection
-            </button>
+            <div className="selected-cities-list">
+              {selectedCities.map(city => {
+                const cityData = cities.find(c => c.city === city)
+                return (
+                  <div key={city} className="selected-city-tag">
+                    <span
+                      className={`search-dot ${cityData?.city_type === 'gateway' ? 'gateway' : 'other'}`}
+                    >
+                      ●
+                    </span>
+                    <span className="selected-city-name">{city}</span>
+                    <button
+                      className="selected-city-remove"
+                      onClick={() => toggleCity(city)}
+                      aria-label={`Remove ${city}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+
+              <button
+                className="clear-btn"
+                onClick={() => setSelectedCities([])}
+              >
+                Clear all
+              </button>
+            </div>
           )}
         </aside>
 
@@ -223,7 +252,9 @@ export default function App() {
             <>
               <h2>
                 Foreign-Born % of Population
-                {selectedCities.length > 0 ? ` — ${selectedCities.join(', ')}` : ' — All Cities'}
+                {selectedCities.length > 0
+                  ? ` — ${selectedCities.join(', ')}`
+                  : ' — All Cities'}
               </h2>
 
               <div className="overview-controls">
@@ -261,10 +292,14 @@ export default function App() {
                     <div className="bar-track">
                       <div
                         className={`bar-fill ${d.city_type}`}
-                        style={{ width: `${Math.min(d.fb_pct ?? 0, 60) / 60 * 100}%` }}
+                        style={{
+                          width: `${(Math.min(d.fb_pct ?? 0, 60) / 60) * 100}%`,
+                        }}
                       />
                     </div>
-                    <span className="bar-value">{d.fb_pct?.toFixed(1) ?? 'N/A'}%</span>
+                    <span className="bar-value">
+                      {d.fb_pct?.toFixed(1) ?? 'N/A'}%
+                    </span>
                   </div>
                 ))}
               </div>

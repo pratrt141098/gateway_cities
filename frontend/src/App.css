@@ -62,7 +62,7 @@ body {
 
 .type-label.gateway { color: #4e9af1; }
 .type-label.other { color: #bfc4cf; }
-.type-label.benchmark { color: #f0a64a; }
+
 
 .city-list {
   display: flex;
@@ -92,7 +92,7 @@ body {
 
 .city-btn.gateway { border-left: 3px solid #4e9af1; }
 .city-btn.other { border-left: 3px solid #bfc4cf; }
-.city-btn.benchmark { border-left: 3px solid #f0a64a; }
+
 
 .clear-btn {
   margin-top: 0.75rem;
@@ -154,7 +154,7 @@ body {
 
 .bar-fill.gateway { background: #4e9af1; }
 .bar-fill.other { background: #bfc4cf; }
-.bar-fill.benchmark { background: #f0a64a; }
+
 
 .bar-value {
   font-size: 0.8rem;
@@ -346,7 +346,7 @@ body {
 
 .search-dot.gateway { color: #5aa2ff; }
 .search-dot.other { color: #bfc4cf; }
-.search-dot.benchmark { color: #f0a64a; }
+
 
 .overview-controls {
   display: flex;
