@@ -1,6 +1,13 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from services import data_store
+from dotenv import load_dotenv
+try:
+    from backend.services import data_store, chat_service
+except ModuleNotFoundError:
+    # Supports running as: python backend/app.py
+    from services import data_store, chat_service
+
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -59,6 +66,46 @@ def time_series():
     city   = request.args.get("city")
     metric = request.args.get("metric", "fb_pct")
     return jsonify(data_store.get_time_series(city=city, metric=metric))
+
+
+@app.post("/api/chat")
+def chat():
+    payload = request.get_json(silent=True) or {}
+    message = (payload.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "Missing message"}), 400
+    try:
+        return jsonify(chat_service.chat(message))
+    except Exception as e:
+        msg = str(e)
+        if "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
+            return jsonify(
+                {
+                    "answer": (
+                        "The Gemini API key is configured, but the project has no available "
+                        "Gemini quota (RESOURCE_EXHAUSTED). Please enable billing or switch "
+                        "to a project / key with active Gemini quota, then try again."
+                    )
+                }
+            ), 200
+        if "NOT_FOUND" in msg and "gemini" in msg.lower():
+            return jsonify(
+                {
+                    "answer": (
+                        "The configured Gemini model name is not available for this project. "
+                        "Please confirm that the model 'gemini-1.5-flash' is enabled for your "
+                        "API key, or switch to another supported Gemini model."
+                    )
+                }
+            ), 200
+        return jsonify(
+            {
+                "answer": (
+                    "The chatbot backend hit an internal error. "
+                    f"Details: {msg}"
+                )
+            }
+        ), 200
 import os
 print("RUNNING FILE:", os.path.abspath(__file__))
 print("URL MAP:", app.url_map)
