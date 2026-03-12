@@ -1,6 +1,82 @@
 from typing import Any, Dict, List
+import os
+from pathlib import Path
+
+from google import genai
 
 from . import data_store
+from .rag import RagIndex, retrieve
+
+
+INDEX_PATH = Path(__file__).parent.parent / "rag_index" / "index.json"
+
+METRIC_HELP = {
+  "fb_pct": "Foreign-born share of total population (percent).",
+  "unemployment_rate": "Unemployment rate (percent).",
+  "median_income": "Median household income (USD).",
+  "poverty_rate": "Foreign-born poverty rate (percent).",
+  "bachelors_pct": "Share with a bachelor's degree or higher (percent).",
+  "homeownership_pct": "Homeownership rate (percent).",
+  "fb_income": "Median income for foreign-born (USD).",
+}
+
+
+def _gemini_client() -> genai.Client:
+  api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+  if not api_key:
+    raise RuntimeError("Missing GEMINI_API_KEY (or GOOGLE_API_KEY).")
+  return genai.Client(api_key=api_key)
+
+
+def _gateway_cities_set() -> set[str]:
+  """
+  Derive the set of Gateway Cities from the processed cities_master data.
+  Falls back to an empty set if the data isn't available.
+  """
+  try:
+    rows = data_store.get_cities_master()
+  except Exception:
+    rows = []
+
+  # Prefer explicit gateway flag from data if present.
+  from_data = {
+    r["city"]
+    for r in rows
+    if isinstance(r.get("city"), str) and r.get("city_type") == "gateway"
+  }
+
+  if from_data:
+    return from_data
+
+  # Fallback: hard-coded Gateway Cities list aligned with frontend.
+  return {
+    "Attleboro",
+    "Barnstable",
+    "Brockton",
+    "Chelsea",
+    "Chicopee",
+    "Everett",
+    "Fall River",
+    "Fitchburg",
+    "Framingham",
+    "Haverhill",
+    "Holyoke",
+    "Lawrence",
+    "Leominster",
+    "Lowell",
+    "Lynn",
+    "Malden",
+    "Methuen",
+    "New Bedford",
+    "Peabody",
+    "Pittsfield",
+    "Quincy",
+    "Revere",
+    "Salem",
+    "Springfield",
+    "Taunton",
+    "Worcester",
+  }
 
 
 def _find_cities_in_text(text: str) -> List[str]:
@@ -87,7 +163,17 @@ def _foreign_born_trend(city: str) -> Dict[str, Any]:
     "data": norm,
   }
 
-  return {"answer": answer, "chart": chart}
+  analysis = {
+    "type": "trend",
+    "city": city,
+    "start_year": start_year,
+    "end_year": end_year,
+    "start_value": start_val,
+    "end_value": end_val,
+    "direction": direction,
+  }
+
+  return {"answer": answer, "chart": chart, "analysis": analysis}
 
 
 def _latest_snapshot(city: str) -> Dict[str, Any]:
@@ -119,7 +205,17 @@ def _latest_snapshot(city: str) -> Dict[str, Any]:
     "\n\nSource: American Community Survey 5-year estimates, 2010–2024."
   )
 
-  return {"answer": answer, "chart": None}
+  analysis = {
+    "type": "snapshot",
+    "city": city,
+    "foreign_born_pct": fb.get("fb_pct"),
+    "median_household_income": emp.get("median_household_income"),
+    "unemployment_rate": emp.get("unemployment_rate"),
+    "bachelors_pct": edu.get("bachelors_pct"),
+    "homeownership_pct": own.get("homeownership_pct"),
+  }
+
+  return {"answer": answer, "chart": None, "analysis": analysis}
 
 
 def _top_origins(city: str) -> Dict[str, Any]:
@@ -147,13 +243,82 @@ def _top_origins(city: str) -> Dict[str, Any]:
   answer = "\n".join(lines) + (
     "\n\nSource: American Community Survey 5-year estimates, 2010–2024."
   )
-  return {"answer": answer, "chart": None}
+  analysis = {
+    "type": "origins",
+    "city": city,
+    "top5": top,
+  }
+  return {"answer": answer, "chart": None, "analysis": analysis}
 
 
-def chat(message: str) -> Dict[str, Any]:
+def _lowest_poverty_cities(limit: int = 5) -> Dict[str, Any]:
   """
-  Deterministic chatbot that answers a small set of common questions
-  using the existing data_store APIs. No external LLM needed.
+  Find Gateway Cities with the lowest foreign-born poverty rates using
+  the time-series metric 'poverty_rate' (fb_poverty_pct).
+  """
+  rows = data_store.get_time_series(metric="poverty_rate")
+  if not rows:
+    return {
+      "answer": (
+        "I couldn't find foreign-born poverty rate data across Gateway Cities. "
+        "Try focusing on a specific city in the dashboard.\n\n"
+        "Source: American Community Survey 5-year estimates, 2010–2024."
+      ),
+      "chart": None,
+    }
+
+  gateway = _gateway_cities_set()
+
+  latest_by_city: dict[str, Dict[str, Any]] = {}
+  for r in rows:
+    city = r.get("city")
+    year = r.get("year")
+    if not city or year is None:
+      continue
+    if gateway and city not in gateway:
+      continue
+    prev = latest_by_city.get(city)
+    if prev is None or year > prev.get("year", -1):
+      latest_by_city[city] = r
+
+  clean = [
+    (city, r["year"], r.get("value"))
+    for city, r in latest_by_city.items()
+    if r.get("value") is not None
+  ]
+  if not clean:
+    return {
+      "answer": (
+        "I couldn't find usable foreign-born poverty rates for Gateway Cities.\n\n"
+        "Source: American Community Survey 5-year estimates, 2010–2024."
+      ),
+      "chart": None,
+    }
+
+  clean.sort(key=lambda x: x[2])  # sort by poverty rate ascending
+  top = clean[: max(1, limit)]
+
+  lines = [
+    "Gateway Cities with the lowest foreign-born poverty rates (latest ACS period):"
+  ]
+  for city, year, value in top:
+    lines.append(f"- {city} ({year}): {_format_pct(value)}")
+
+  answer = "\n".join(lines) + (
+    "\n\nSource: American Community Survey 5-year estimates, 2010–2024."
+  )
+  analysis = {
+    "type": "poverty_ranking",
+    "cities": [
+      {"city": city, "year": year, "poverty_rate": value} for city, year, value in top
+    ],
+  }
+  return {"answer": answer, "chart": None, "analysis": analysis}
+
+
+def _offline_chat(message: str) -> Dict[str, Any]:
+  """
+  Deterministic intent + analysis without LLM.
   """
   text = (message or "").strip()
   if not text:
@@ -174,6 +339,13 @@ def chat(message: str) -> Dict[str, Any]:
   if cities and ("origin" in lower or "origins" in lower or "country" in lower):
     city = cities[0]
     return _top_origins(city)
+
+  # 2b) Poverty ranking across Gateway Cities.
+  if ("poverty" in lower or "poor" in lower) and (
+    "lowest" in lower or "low" in lower
+  ):
+    # Question like: "Which Gateway Cities have the lowest foreign-born poverty rates?"
+    return _lowest_poverty_cities()
 
   # 3) Single-city snapshot.
   if cities:
@@ -207,5 +379,158 @@ def chat(message: str) -> Dict[str, Any]:
       "the processed parquet files in data/processed."
     ),
     "chart": None,
+  }
+
+
+def _llm_rewrite(message: str, base_answer: str, analysis: Dict[str, Any]) -> str:
+  """
+  Uses Gemini to rewrite/expand the deterministic answer in a more natural way,
+  without changing any numeric values.
+  """
+  try:
+    client = _gemini_client()
+  except Exception:
+    return base_answer
+
+  model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+  # Retrieve RAG context about metrics / tools / project rules.
+  try:
+    index = RagIndex(INDEX_PATH)
+    docs = retrieve(index=index, query=message, metric_help=METRIC_HELP, k=4)
+    rag_context = "\n\n".join(f"[{d.id}]\n{d.text}" for d in docs)
+  except Exception:
+    rag_context = ""
+
+  system = (
+    "You are helping Massachusetts journalists interpret ACS data about Gateway Cities.\n"
+    "You are given:\n"
+    "- The user's original question.\n"
+    "- A structured analysis dictionary (JSON).\n"
+    "- A baseline answer string.\n\n"
+    "You may also see RAG context describing the available metrics and tools.\n\n"
+    "Rewrite the answer to be clear and journalistic, but DO NOT change any numeric values, years, or city names.\n"
+    "Keep it concise (2–4 sentences) and always keep the ACS source line verbatim at the end.\n"
+  )
+
+  prompt = (
+    f"User question:\n{message}\n\n"
+    f"RAG context:\n{rag_context}\n\n"
+    f"Analysis JSON:\n{analysis}\n\n"
+    f"Baseline answer:\n{base_answer}\n\n"
+    "Now rewrite the answer as instructed."
+  )
+
+  try:
+    resp = client.models.generate_content(
+      model=model,
+      contents=[
+        {"role": "user", "parts": [{"text": system}]},
+        {"role": "user", "parts": [{"text": prompt}]},
+      ],
+    )
+    text = (resp.text or "").strip()  # type: ignore[attr-defined]
+    # Add a small marker so we can verify Gemini is active.
+    if text:
+      return f"Interpretation:\n\n{text}"
+    return base_answer
+  except Exception as e:
+    # For now, surface Gemini errors in the answer so we can debug setup.
+    return base_answer + f"\n\n[Gemini error: {e}]"
+
+
+def _llm_general_answer(message: str, fallback: str) -> str:
+  """
+  Use Gemini to answer a general knowledge question scoped to ACS / Gateway Cities.
+  Falls back to *fallback* if Gemini is unavailable.
+  """
+  try:
+    client = _gemini_client()
+  except Exception:
+    return fallback
+
+  model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+  try:
+    index = RagIndex(INDEX_PATH)
+    docs = retrieve(index=index, query=message, metric_help=METRIC_HELP, k=4)
+    rag_context = "\n\n".join(f"[{d.id}]\n{d.text}" for d in docs)
+  except Exception:
+    rag_context = ""
+
+  system = (
+    "You are a helpful assistant for Massachusetts journalists working with "
+    "American Community Survey (ACS) data about Gateway Cities.\n"
+    "Answer the user's question clearly and concisely (one short paragraph).\n"
+    "If the question is unrelated to ACS data, demographics, or Gateway Cities, "
+    "politely say you can only help with those topics.\n"
+  )
+
+  prompt = (
+    f"User question:\n{message}\n\n"
+    f"RAG context:\n{rag_context}\n\n"
+    "Answer the question as instructed."
+  )
+
+  try:
+    resp = client.models.generate_content(
+      model=model,
+      contents=[
+        {"role": "user", "parts": [{"text": system}]},
+        {"role": "user", "parts": [{"text": prompt}]},
+      ],
+    )
+    text = (resp.text or "").strip()  # type: ignore[attr-defined]
+    if text:
+      return text
+    return fallback
+  except Exception:
+    return fallback
+
+
+def _is_general_question(text: str) -> bool:
+  """Return True when the message looks like a general/informational question
+  rather than a data query about a specific city."""
+  lower = text.lower()
+  signals = [
+    "what is", "what are", "what's", "explain", "define", "definition",
+    "why do", "why are", "why is", "how do", "how does", "how is",
+    "tell me about", "describe", "meaning of",
+  ]
+  return any(s in lower for s in signals)
+
+
+def chat(message: str) -> Dict[str, Any]:
+  """
+  Main entrypoint: run deterministic analysis, then (optionally) let Gemini
+  rewrite the answer in natural language if a valid API key/model are set.
+  """
+  base = _offline_chat(message)
+  analysis = base.get("analysis")
+
+  # If we have structured analysis, let Gemini rewrite it.
+  if isinstance(analysis, dict):
+    answer = _llm_rewrite(
+      message=message,
+      base_answer=base.get("answer", ""),
+      analysis=analysis,
+    )
+    return {
+      "answer": answer,
+      "chart": base.get("chart"),
+    }
+
+  # No structured analysis — if it looks like a general question, ask Gemini directly.
+  if _is_general_question(message):
+    answer = _llm_general_answer(message, fallback=base.get("answer", ""))
+    return {
+      "answer": answer,
+      "chart": base.get("chart"),
+    }
+
+  # Otherwise return the deterministic offline answer.
+  return {
+    "answer": base.get("answer", ""),
+    "chart": base.get("chart"),
   }
 

@@ -26,24 +26,27 @@ def _client() -> genai.Client:
 
 def _embed(texts: list[str]) -> np.ndarray:
     """
-    Returns shape (n, d) float32 embedding matrix.
+    Returns shape (n, d) float32 embedding matrix using Gemini embeddings.
     """
-    c = _client()
-    resp = c.models.embed_content(
-        model="models/textembedding-gecko@003",
+    if not texts:
+        return np.zeros((0, 1), dtype=np.float32)
+
+    client = _client()
+    model_name = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
+
+    resp = client.models.embed_content(
+        model=model_name,
         contents=texts,
     )
 
     # google-genai returns either a single embedding or a list depending on input.
     embeddings: list[list[float]] = []
     if isinstance(resp, dict):
-        # defensive: older shapes
         if "embedding" in resp:
             embeddings = [resp["embedding"]]
         elif "embeddings" in resp:
             embeddings = [e["values"] for e in resp["embeddings"]]
     else:
-        # Expected modern shape
         if getattr(resp, "embedding", None) is not None:
             embeddings = [resp.embedding.values]  # type: ignore[attr-defined]
         else:
@@ -132,9 +135,20 @@ def ensure_index(index: RagIndex, metric_help: dict[str, str]) -> tuple[list[Rag
 
 
 def retrieve(index: RagIndex, query: str, metric_help: dict[str, str], k: int = 4) -> list[RagDoc]:
-    # Fallback: for now, skip semantic similarity and just return
-    # the core docs. This avoids dependency on embedding model
-    # configuration while still giving Gemini useful context.
-    docs = build_default_docs(metric_help=metric_help)
-    return docs[: max(1, k)]
+    """
+    Return top-k docs most similar to the query using cosine similarity over
+    Gemini embeddings. If anything goes wrong (no key, bad model, etc.),
+    fall back to returning the default docs.
+    """
+    try:
+        docs, doc_emb = ensure_index(index=index, metric_help=metric_help)
+        if not len(docs):
+            return []
+        q_emb = _normalize_rows(_embed([query]))[0]
+        sims = (doc_emb @ q_emb).tolist()
+        top_idx = np.argsort(np.array(sims))[::-1][: max(1, k)]
+        return [docs[int(i)] for i in top_idx]
+    except Exception:
+        docs = build_default_docs(metric_help=metric_help)
+        return docs[: max(1, k)]
 
