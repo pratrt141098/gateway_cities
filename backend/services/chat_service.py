@@ -316,6 +316,69 @@ def _lowest_poverty_cities(limit: int = 5) -> Dict[str, Any]:
   return {"answer": answer, "chart": None, "analysis": analysis}
 
 
+def _lowest_foreign_born_cities(limit: int = 5) -> Dict[str, Any]:
+  """
+  Find Gateway Cities with the lowest foreign-born share (fb_pct) using the
+  latest available year from foreign_born_core.
+  """
+  rows = data_store.get_foreign_born()
+  if not rows:
+    return {
+      "answer": (
+        "I couldn't find foreign-born share data across Massachusetts places.\n\n"
+        "Source: American Community Survey 5-year estimates, 2010–2024."
+      ),
+      "chart": None,
+    }
+
+  gateway = _gateway_cities_set()
+  latest_by_city: dict[str, Dict[str, Any]] = {}
+
+  for r in rows:
+    city = r.get("city")
+    year = r.get("year")
+    if not city or year is None:
+      continue
+    if gateway and city not in gateway:
+      continue
+    prev = latest_by_city.get(city)
+    if prev is None or year > prev.get("year", -1):
+      latest_by_city[city] = r
+
+  clean = [
+    (city, r.get("year"), r.get("fb_pct"))
+    for city, r in latest_by_city.items()
+    if r.get("fb_pct") is not None
+  ]
+  if not clean:
+    return {
+      "answer": (
+        "I couldn't find usable foreign-born shares for Gateway Cities.\n\n"
+        "Source: American Community Survey 5-year estimates, 2010–2024."
+      ),
+      "chart": None,
+    }
+
+  # Sort ascending by foreign-born share
+  clean.sort(key=lambda x: x[2])
+  top = clean[: max(1, limit)]
+
+  lines = ["Gateway Cities with the lowest foreign-born share (latest ACS period):"]
+  for city, year, value in top:
+    lines.append(f"- {city} ({year}): {_format_pct(value)}")
+
+  answer = "\n".join(lines) + (
+    "\n\nSource: American Community Survey 5-year estimates, 2010–2024."
+  )
+  analysis = {
+    "type": "fb_lowest_ranking",
+    "cities": [
+      {"city": city, "year": year, "fb_pct": value} for city, year, value in top
+    ],
+  }
+  return {"answer": answer, "chart": None, "analysis": analysis}
+
+
 def _offline_chat(message: str) -> Dict[str, Any]:
   """
   Deterministic intent + analysis without LLM.
@@ -346,6 +409,13 @@ def _offline_chat(message: str) -> Dict[str, Any]:
   ):
     # Question like: "Which Gateway Cities have the lowest foreign-born poverty rates?"
     return _lowest_poverty_cities()
+
+  # 2c) Lowest foreign-born share across Gateway Cities.
+  if ("foreign-born" in lower or "foreign born" in lower) and (
+    "lowest" in lower or "low" in lower
+  ):
+    # Question like: "Which Gateway City has the lowest foreign-born share?"
+    return _lowest_foreign_born_cities()
 
   # 3) Single-city snapshot.
   if cities:
