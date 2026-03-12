@@ -20,6 +20,34 @@ const COLORS = {
   other: '#bfc4cf',
 }
 
+const downloadCSV = (filename, rows) => {
+  if (!rows || !rows.length) return
+
+  const headers = Object.keys(rows[0])
+  const csv = [
+    headers.join(','),
+    ...rows.map((row) =>
+      headers
+        .map((header) => {
+          const value = row[header] ?? ''
+          const escaped = String(value).replace(/"/g, '""')
+          return `"${escaped}"`
+        })
+        .join(','),
+    ),
+  ].join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 export default function PerCapitaComparison({ selectedCities, allCities }) {
   const [data, setData] = useState([])
   const [metric, setMetric] = useState('fb_pct')
@@ -87,6 +115,31 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
 
     return filtered.slice(0, topN)
   }, [data, metric, gatewayOnly, topN])
+
+  useEffect(() => {
+    const handleDownload = (event) => {
+      if (event.detail?.tab !== 'Per Capita Comparison') return
+      if (!filteredSortedData.length) return
+
+      const rows = filteredSortedData.map((d) => ({
+        city: d.city,
+        city_type: d.city_type,
+        metric_key: metric,
+        metric_label: selectedMetric?.label,
+        metric_value: d[metric],
+        fb_pct: d.fb_pct,
+        unemployment_rate: d.unemployment_rate,
+        bachelors_pct: d.bachelors_pct,
+        homeownership_pct: d.homeownership_pct,
+        median_household_income: d.median_household_income,
+      }))
+
+      downloadCSV('per_capita_comparison.csv', rows)
+    }
+
+    window.addEventListener('download-active-tab', handleDownload)
+    return () => window.removeEventListener('download-active-tab', handleDownload)
+  }, [filteredSortedData, metric, selectedMetric])
 
   const chartHeight = Math.max(filteredSortedData.length * 42 + 40, 320)
 

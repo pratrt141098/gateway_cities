@@ -44,6 +44,34 @@ const averageOf = (rows, key) => {
 const cleanCountryLabel = (label) =>
   String(label || '').replace(/:$/, '').trim()
 
+const downloadCSV = (filename, rows) => {
+  if (!rows || !rows.length) return
+
+  const headers = Object.keys(rows[0])
+  const csv = [
+    headers.join(','),
+    ...rows.map((row) =>
+      headers
+        .map((header) => {
+          const value = row[header] ?? ''
+          const escaped = String(value).replace(/"/g, '""')
+          return `"${escaped}"`
+        })
+        .join(','),
+    ),
+  ].join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 export default function CityProfile({ selectedCities }) {
   const citiesToShow = selectedCities.length > 0 ? selectedCities : [DEFAULT_CITY]
   const [profiles, setProfiles] = useState([])
@@ -86,7 +114,7 @@ export default function CityProfile({ selectedCities }) {
             .sort((a, b) => b.estimate - a.estimate)
             .slice(0, 10),
         }
-      })
+      }),
     )
 
     Promise.all([
@@ -127,6 +155,47 @@ export default function CityProfile({ selectedCities }) {
       })
   }, [citiesToShow.join(',')])
 
+  useEffect(() => {
+    const handleDownload = (event) => {
+      if (event.detail?.tab !== 'City Profile') return
+      if (!profiles.length) return
+
+      const profileRows = profiles.map((p) => ({
+        city: p.city,
+        city_type: p.city_type,
+        fb_pct: p.fb_pct,
+        unemployment_rate: p.unemployment_rate,
+        bachelors_pct: p.bachelors_pct,
+        homeownership_pct: p.homeownership_pct,
+        median_household_income: p.median_household_income,
+        ma_avg_fb_pct: stateAvg?.fb_pct,
+        ma_avg_unemployment_rate: stateAvg?.unemployment_rate,
+        ma_avg_bachelors_pct: stateAvg?.bachelors_pct,
+        ma_avg_homeownership_pct: stateAvg?.homeownership_pct,
+        ma_avg_median_household_income: stateAvg?.median_household_income,
+      }))
+
+      const originRows = profiles.flatMap((p) =>
+        (origins[p.city] || []).map((row) => ({
+          city: p.city,
+          country: row.country,
+          estimate: row.estimate,
+        })),
+      )
+
+      downloadCSV('city_profile_metrics.csv', profileRows)
+
+      if (originRows.length) {
+        setTimeout(() => {
+          downloadCSV('city_profile_origins.csv', originRows)
+        }, 150)
+      }
+    }
+
+    window.addEventListener('download-active-tab', handleDownload)
+    return () => window.removeEventListener('download-active-tab', handleDownload)
+  }, [profiles, origins, stateAvg])
+
   if (loading || profiles.length === 0) {
     return (
       <div className="placeholder">
@@ -165,11 +234,9 @@ export default function CityProfile({ selectedCities }) {
                   }}
                 >
                   <div style={{ fontSize: '0.75rem', color: '#aaa' }}>{s.label}</div>
-
                   <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#fff' }}>
                     {formatVal(val, s.format)}
                   </div>
-
                   {stVal != null && (
                     <div
                       style={{
@@ -204,7 +271,7 @@ export default function CityProfile({ selectedCities }) {
           {origins[profile.city]?.length > 0 && (
             <>
               <h3 style={{ marginBottom: '0.75rem' }}>Top Countries of Origin</h3>
-              <ResponsiveContainer width="100%" height={340}>
+              <ResponsiveContainer width="100%" height={300}>
                 <BarChart
                   data={origins[profile.city]}
                   layout="vertical"
@@ -215,19 +282,11 @@ export default function CityProfile({ selectedCities }) {
                   <YAxis
                     dataKey="country"
                     type="category"
-                    tick={{ fill: '#aaa', fontSize: 13 }}
-                    width={125}
+                    tick={{ fill: '#aaa' }}
+                    width={150}
                     interval={0}
                   />
-                  <Tooltip
-                    contentStyle={{
-                      background: '#1e1f2e',
-                      border: '1px solid #2a2a3a',
-                      borderRadius: 6,
-                    }}
-                    labelStyle={{ color: '#fff' }}
-                    formatter={(value) => [Number(value).toLocaleString(), 'Estimate']}
-                  />
+                  <Tooltip />
                   <Bar dataKey="estimate" fill="#4e9af1" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -356,7 +415,7 @@ export default function CityProfile({ selectedCities }) {
               <div key={s.key} style={{ marginBottom: '2rem' }}>
                 <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem' }}>{s.label}</h3>
                 <ResponsiveContainer width="100%" height={chartData.length * 40 + 40}>
-                  <BarChart data={chartData} layout="vertical" margin={{ left: 150, right: 80 }}>
+                  <BarChart data={chartData} layout="vertical" margin={{ left: 110, right: 80 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" horizontal={false} />
                     <XAxis
                       type="number"
@@ -369,8 +428,7 @@ export default function CityProfile({ selectedCities }) {
                       dataKey="city"
                       type="category"
                       tick={{ fill: '#ccc', fontSize: 12 }}
-                      width={140}
-                      interval={0}
+                      width={105}
                     />
                     <Tooltip
                       contentStyle={{
@@ -380,6 +438,14 @@ export default function CityProfile({ selectedCities }) {
                       }}
                       formatter={(v) => [formatVal(v, s.format), s.label]}
                     />
+                    {stateAvg?.[s.key] != null && (
+                      <CartesianGrid
+                        horizontalPoints={[]}
+                        verticalPoints={[stateAvg[s.key]]}
+                        stroke="#888"
+                        strokeDasharray="6 3"
+                      />
+                    )}
                     <Bar
                       dataKey="value"
                       radius={[0, 4, 4, 0]}

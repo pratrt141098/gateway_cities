@@ -13,7 +13,7 @@ const normalizeCityType = (city) => {
 }
 
 const normalizeRows = (rows = []) =>
-  rows.map(r => ({
+  rows.map((r) => ({
     ...r,
     city_type: normalizeCityType(r.city),
   }))
@@ -47,6 +47,34 @@ const GATEWAY_CITIES = new Set([
   'Worcester',
 ])
 
+const downloadCSV = (filename, rows) => {
+  if (!rows || !rows.length) return
+
+  const headers = Object.keys(rows[0])
+  const csv = [
+    headers.join(','),
+    ...rows.map((row) =>
+      headers
+        .map((header) => {
+          const value = row[header] ?? ''
+          const escaped = String(value).replace(/"/g, '""')
+          return `"${escaped}"`
+        })
+        .join(','),
+    ),
+  ].join('\n')
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('Overview')
   const [cities, setCities] = useState([])
@@ -61,26 +89,26 @@ export default function App() {
 
   useEffect(() => {
     fetchCities()
-      .then(data => {
+      .then((data) => {
         const seen = new Set()
 
-        const unique = normalizeRows(data).filter(c => {
+        const unique = normalizeRows(data).filter((c) => {
           if (seen.has(c.city)) return false
           seen.add(c.city)
           return true
         })
 
-        console.log('raw city types:', [...new Set(data.map(c => c.city_type))])
-        console.log('normalized city types:', [...new Set(unique.map(c => c.city_type))])
+        console.log('raw city types:', [...new Set(data.map((c) => c.city_type))])
+        console.log('normalized city types:', [...new Set(unique.map((c) => c.city_type))])
         console.log(
           'gateway cities after normalize:',
-          unique.filter(c => c.city_type === 'gateway').map(c => c.city),
+          unique.filter((c) => c.city_type === 'gateway').map((c) => c.city),
         )
 
         setCities(unique)
         setLoading(false)
       })
-      .catch(err => {
+      .catch((err) => {
         console.error('Failed to load cities:', err)
         setLoading(false)
       })
@@ -88,25 +116,25 @@ export default function App() {
 
   useEffect(() => {
     fetchMapStats()
-      .then(data => setMapStats(normalizeRows(data)))
-      .catch(err => console.error('Failed to load map stats:', err))
+      .then((data) => setMapStats(normalizeRows(data)))
+      .catch((err) => console.error('Failed to load map stats:', err))
   }, [])
 
   useEffect(() => {
     if (selectedCities.length === 0) {
       fetchForeignBorn()
-        .then(data => setForeignBorn(normalizeRows(data)))
-        .catch(err => console.error('Failed to load foreign born:', err))
+        .then((data) => setForeignBorn(normalizeRows(data)))
+        .catch((err) => console.error('Failed to load foreign born:', err))
     } else {
-      Promise.all(selectedCities.map(c => fetchForeignBorn({ city: c })))
-        .then(results => setForeignBorn(normalizeRows(results.flat())))
-        .catch(err => console.error('Failed to load foreign born for cities:', err))
+      Promise.all(selectedCities.map((c) => fetchForeignBorn({ city: c })))
+        .then((results) => setForeignBorn(normalizeRows(results.flat())))
+        .catch((err) => console.error('Failed to load foreign born for cities:', err))
     }
   }, [selectedCities])
 
   const toggleCity = (city) => {
-    setSelectedCities(prev =>
-      prev.includes(city) ? prev.filter(c => c !== city) : [...prev, city],
+    setSelectedCities((prev) =>
+      prev.includes(city) ? prev.filter((c) => c !== city) : [...prev, city],
     )
   }
 
@@ -118,25 +146,61 @@ export default function App() {
     })
 
     if (!q) return sorted
-    return sorted.filter(c => c.city.toLowerCase().includes(q))
+    return sorted.filter((c) => c.city.toLowerCase().includes(q))
   }, [cities, cityQuery])
 
   const gatewayCitySet = useMemo(() => {
     return new Set(
-      cities.filter(c => c.city_type === 'gateway').map(c => c.city),
+      cities.filter((c) => c.city_type === 'gateway').map((c) => c.city),
     )
   }, [cities])
 
   const sorted = [...foreignBorn]
-    .map(d => ({
+    .map((d) => ({
       ...d,
       city_type: gatewayCitySet.has(d.city) ? 'gateway' : 'other',
     }))
     .sort((a, b) => (b.fb_pct ?? 0) - (a.fb_pct ?? 0))
 
   const overviewData = (
-    gatewayOnly ? sorted.filter(d => gatewayCitySet.has(d.city)) : sorted
+    gatewayOnly ? sorted.filter((d) => gatewayCitySet.has(d.city)) : sorted
   ).slice(0, topN)
+
+  const handleDownload = () => {
+    if (activeTab === 'Overview') {
+      const rows = overviewData.map((d) => ({
+        city: d.city,
+        city_type: d.city_type,
+        foreign_born_pct: d.fb_pct,
+        year: d.year ?? 'latest',
+      }))
+
+      downloadCSV('overview_foreign_born.csv', rows)
+      return
+    }
+
+    if (activeTab === 'Map') {
+      const rows = mapStats.map((d) => ({
+        city: d.city,
+        city_type: d.city_type,
+        ...d,
+      }))
+
+      downloadCSV('map_data.csv', rows)
+      return
+    }
+
+    window.dispatchEvent(
+      new CustomEvent('download-active-tab', {
+        detail: {
+          tab: activeTab,
+          selectedCities,
+          topN,
+          gatewayOnly,
+        },
+      }),
+    )
+  }
 
   if (loading) return <div className="loading">Loading...</div>
 
@@ -177,7 +241,7 @@ export default function App() {
                       </div>
                     )}
 
-                    {filteredCities.map(c => (
+                    {filteredCities.map((c) => (
                       <button
                         key={`${c.city}-${c.city_type}-search`}
                         className={`city-search-result ${selectedCities.includes(c.city) ? 'active' : ''}`}
@@ -204,8 +268,8 @@ export default function App() {
 
           {selectedCities.length > 0 && (
             <div className="selected-cities-list">
-              {selectedCities.map(city => {
-                const cityData = cities.find(c => c.city === city)
+              {selectedCities.map((city) => {
+                const cityData = cities.find((c) => c.city === city)
                 return (
                   <div key={city} className="selected-city-tag">
                     <span
@@ -236,16 +300,26 @@ export default function App() {
         </aside>
 
         <main className="main">
-          <div className="tabs">
-            {['Overview', 'Per Capita Comparison', 'City Profile', 'Origins', 'Trends', 'Map'].map(tab => (
-              <button
-                key={tab}
-                className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab)}
-              >
-                {tab}
-              </button>
-            ))}
+          <div className="tabs-row">
+            <div className="tabs">
+              {['Overview', 'Per Capita Comparison', 'City Profile', 'Origins', 'Trends', 'Map'].map((tab) => (
+                <button
+                  key={tab}
+                  className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            <button
+              className="tab-btn download-btn"
+              onClick={handleDownload}
+              title={`Download ${activeTab} data`}
+            >
+              Download CSV
+            </button>
           </div>
 
           {activeTab === 'Overview' && (
@@ -275,7 +349,7 @@ export default function App() {
 
                 <button
                   className={`overview-toggle-btn ${gatewayOnly ? 'active' : ''}`}
-                  onClick={() => setGatewayOnly(prev => !prev)}
+                  onClick={() => setGatewayOnly((prev) => !prev)}
                 >
                   {gatewayOnly ? 'Showing Gateway Only' : 'Show Gateway Only'}
                 </button>
@@ -286,7 +360,7 @@ export default function App() {
               </p>
 
               <div className="bar-chart">
-                {overviewData.map(d => (
+                {overviewData.map((d) => (
                   <div key={`${d.city}-${d.year ?? 'latest'}`} className="bar-row">
                     <span className="bar-label">{d.city}</span>
                     <div className="bar-track">

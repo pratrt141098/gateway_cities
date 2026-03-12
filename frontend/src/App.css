@@ -202,12 +202,23 @@ body {
   color: #aaa;
 }
 
-.tabs {
+.tabs-row {
   display: flex;
-  gap: 0.5rem;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 1.5rem;
   border-bottom: 1px solid #2a2a3a;
   padding-bottom: 0.75rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+  flex-wrap: wrap;
 }
 
 .tab-btn {
@@ -230,6 +241,11 @@ body {
   background: #1a2540;
   border-color: #4e9af1;
   color: #fff;
+}
+
+.download-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .placeholder {
