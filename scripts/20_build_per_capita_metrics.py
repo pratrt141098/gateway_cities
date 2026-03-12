@@ -12,6 +12,7 @@ import argparse
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import country_converter as coco
 
 INTERIM   = Path("data/interim")
 PROCESSED = Path("data/processed")
@@ -111,7 +112,6 @@ def get_country_map(year: int = 2023) -> dict:
 def build_country_of_origin(years):
     print("→ country_of_origin")
 
-    # Fetch country map once from Census API
     print("  Fetching variable labels from Census API...")
     country_map = get_country_map()
     print(f"  Found {len(country_map)} country-level variables")
@@ -133,10 +133,29 @@ def build_country_of_origin(years):
         raise FileNotFoundError("No b05006 data found")
 
     out = pd.concat(frames, ignore_index=True)
-    out = out[out["estimate"].notna()]  # keep zeros, drop only true NaN
+    out = out[out["estimate"].notna()]
     out = add_city_type(out)
+
+    # --- ADD THIS BLOCK ---
+    print("  Tagging regions with coco...")
+    cc = coco.CountryConverter()
+    out["region"] = cc.pandas_convert(
+        out["country"],
+        to="continent",
+        not_found=None
+    )
+    out["region"] = out["region"].apply(lambda x: x[0] if isinstance(x, list) else x)
+    print("Region value counts:")
+    print(out["region"].value_counts().head(10))
+    print(f"Sample rows with Americas: {len(out[out['region'] == 'Americas'])}")
+
+
+    print(f"  ✓ {out['region'].notna().sum()} rows tagged with region")
+    # ----------------------
+
     out.to_parquet(PROCESSED / "country_of_origin.parquet", index=False)
     print(f"  ✓ {len(out)} rows ({out['year'].nunique()} years, {out['country'].nunique()} countries)")
+
 
 
 def build_education(years):
@@ -265,3 +284,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

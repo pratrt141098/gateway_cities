@@ -67,9 +67,14 @@ def get_country_of_origin(city: str = None):
         df = df[df["city"] == city]
     if "year" in df.columns:
         df = df[df["year"] == df["year"].max()]
-    df = df[~df["country"].isin(REGION_LABELS)]
-    cols = [c for c in ["city", "city_type", "country", "estimate"] if c in df.columns]
+    df = df[
+        ~df["country"].str.endswith(":") &
+        ~df["country"].str.startswith("Other ") &
+        ~df["country"].str.contains(", n.e.c.", regex=False)
+    ]
+    cols = [c for c in ["city", "city_type", "country", "estimate", "region"] if c in df.columns]
     return _to_records(df[cols])
+
 
 
 def get_education(city: str = None):
@@ -154,4 +159,6 @@ def get_time_series(city: str = None, metric: str = "fb_pct"):
     df["metric"] = metric
 
     return _to_records(df.sort_values(["city", "year"]))
+
+
 

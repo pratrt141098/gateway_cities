@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { fetchCountryOfOrigin } from '../api/cities'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid, Cell,
+  ResponsiveContainer, CartesianGrid, Cell
 } from 'recharts'
 
 const ACCENT = '#4e9af1'
@@ -43,33 +43,14 @@ const isRealCountry = (name) => {
   return !NON_COUNTRY_LABELS.has(String(name).trim())
 }
 
-const downloadCSV = (filename, rows) => {
-  if (!rows || !rows.length) return
-
-  const headers = Object.keys(rows[0])
-  const csv = [
-    headers.join(','),
-    ...rows.map((row) =>
-      headers
-        .map((header) => {
-          const value = row[header] ?? ''
-          const escaped = String(value).replace(/"/g, '""')
-          return `"${escaped}"`
-        })
-        .join(','),
-    ),
-  ].join('\n')
-
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.setAttribute('download', filename)
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
-}
+const REGION_OPTIONS = [
+  { value: 'all',       label: 'All regions' },
+  { value: 'Africa',    label: 'Africa' },
+  { value: 'America', label: 'America' },
+  { value: 'Asia',      label: 'Asia' },
+  { value: 'Europe',    label: 'Europe' },
+  { value: 'Oceania',   label: 'Oceania' },
+]
 
 export default function CountryOrigins({ selectedCities, allCities = [] }) {
   const [mode, setMode] = useState('by_city')
@@ -77,14 +58,22 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
   const [loading, setLoading] = useState(true)
 
   const cityNames = useMemo(() => {
-    return [...new Set(allCities.map((c) => c.city).filter(Boolean))].sort()
+    return [...new Set(allCities.map(c => c.city).filter(Boolean))].sort()
   }, [allCities])
 
   const [selectedCity, setSelectedCity] = useState(
-    selectedCities.length === 1 ? selectedCities[0] : '',
+    selectedCities.length === 1 ? selectedCities[0] : ''
   )
   const [countrySearch, setCountrySearch] = useState('')
   const [topN, setTopN] = useState(15)
+
+const [region, setRegion] = useState('all')
+
+const filteredData = useMemo(() => {
+  if (region === 'all') return allData
+  return allData.filter(r => r.region === region)
+}, [allData, region])
+
 
   useEffect(() => {
     if (selectedCities.length === 1) {
@@ -102,103 +91,52 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
     if (cityNames.length === 0) return
 
     setLoading(true)
-    Promise.all(cityNames.map((city) => fetchCountryOfOrigin(city)))
-      .then((results) => {
+    Promise.all(cityNames.map(city => fetchCountryOfOrigin(city)))
+      .then(results => {
         const rows = results
           .flat()
-          .filter((r) => r.estimate > 0 && isRealCountry(r.country))
+          .filter(r => r.estimate > 0 && isRealCountry(r.country))
 
         setAllData(rows)
         setLoading(false)
       })
-      .catch((err) => {
+      .catch(err => {
         console.error('Failed to load country data:', err)
         setLoading(false)
       })
   }, [cityNames])
 
   const byCityData = useMemo(() => {
-    const rows = allData.filter((r) => r.city === selectedCity && r.estimate > 0)
+    const rows = filteredData.filter(r => r.city === selectedCity && r.estimate > 0)
     const total = rows.reduce((s, r) => s + r.estimate, 0)
-
     return rows
-      .map((r) => ({
-        ...r,
-        share: total > 0 ? (r.estimate / total) * 100 : 0,
-      }))
+      .map(r => ({ ...r, share: total > 0 ? (r.estimate / total) * 100 : 0 }))
       .sort((a, b) => b.estimate - a.estimate)
       .slice(0, topN)
-  }, [allData, selectedCity, topN])
+  }, [filteredData, selectedCity, topN])
 
   const byCountryData = useMemo(() => {
     if (!countrySearch.trim()) return []
-
     const q = countrySearch.toLowerCase()
     const matched = [...new Set(
-      allData
-        .filter((r) => r.country?.toLowerCase().includes(q))
-        .map((r) => r.country),
+      filteredData.filter(r => r.country?.toLowerCase().includes(q)).map(r => r.country)
     )]
-
     if (!matched.length) return []
-
-    const country = matched.find((c) => c.toLowerCase() === q) || matched[0]
-
-    return allData
-      .filter((r) => r.country === country && r.estimate > 0)
+    const country = matched.find(c => c.toLowerCase() === q) || matched[0]
+    return filteredData
+      .filter(r => r.country === country && r.estimate > 0)
       .sort((a, b) => b.estimate - a.estimate)
-  }, [allData, countrySearch])
+  }, [filteredData, countrySearch])
 
   const suggestions = useMemo(() => {
     if (!countrySearch.trim() || countrySearch.length < 2) return []
-
     const q = countrySearch.toLowerCase()
-    return [...new Set(allData.map((r) => r.country))]
-      .filter((c) => c?.toLowerCase().includes(q))
+    return [...new Set(filteredData.map(r => r.country))]
+      .filter(c => c?.toLowerCase().includes(q))
       .sort()
       .slice(0, 8)
-  }, [allData, countrySearch])
+  }, [filteredData, countrySearch])
 
-  useEffect(() => {
-    const handleDownload = (event) => {
-      if (event.detail?.tab !== 'Origins') return
-
-      if (mode === 'by_city') {
-        if (!byCityData.length) return
-
-        const rows = byCityData.map((row) => ({
-          mode: 'by_city',
-          city: selectedCity,
-          country: row.country,
-          estimate: row.estimate,
-          share_pct_of_foreign_born_population: Number(row.share?.toFixed(2) ?? 0),
-        }))
-
-        const safeCity = (selectedCity || 'city').toLowerCase().replace(/\s+/g, '_')
-        downloadCSV(`${safeCity}_country_origins.csv`, rows)
-        return
-      }
-
-      if (mode === 'by_country') {
-        if (!byCountryData.length) return
-
-        const country = byCountryData[0]?.country || 'country'
-        const safeCountry = country.toLowerCase().replace(/\s+/g, '_')
-
-        const rows = byCountryData.map((row) => ({
-          mode: 'by_country',
-          country: row.country,
-          city: row.city,
-          estimate: row.estimate,
-        }))
-
-        downloadCSV(`${safeCountry}_cities.csv`, rows)
-      }
-    }
-
-    window.addEventListener('download-active-tab', handleDownload)
-    return () => window.removeEventListener('download-active-tab', handleDownload)
-  }, [mode, byCityData, byCountryData, selectedCity])
 
   if (loading) {
     return <div className="placeholder"><p>Loading country data...</p></div>
@@ -237,16 +175,10 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
               </label>
               <select
                 value={selectedCity}
-                onChange={(e) => setSelectedCity(e.target.value)}
-                style={{
-                  background: '#1e1e2e',
-                  color: '#fff',
-                  border: '1px solid #444',
-                  borderRadius: '6px',
-                  padding: '0.35rem 0.6rem',
-                }}
+                onChange={e => setSelectedCity(e.target.value)}
+                style={{ background: '#1e1e2e', color: '#fff', border: '1px solid #444', borderRadius: '6px', padding: '0.35rem 0.6rem' }}
               >
-                {cityNames.map((city) => (
+                {cityNames.map(city => (
                   <option key={city} value={city}>{city}</option>
                 ))}
               </select>
@@ -258,17 +190,27 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
               </label>
               <select
                 value={topN}
-                onChange={(e) => setTopN(Number(e.target.value))}
-                style={{
-                  background: '#1e1e2e',
-                  color: '#fff',
-                  border: '1px solid #444',
-                  borderRadius: '6px',
-                  padding: '0.35rem 0.6rem',
-                }}
+                onChange={e => setTopN(Number(e.target.value))}
+                style={{ background: '#1e1e2e', color: '#fff', border: '1px solid #444', borderRadius: '6px', padding: '0.35rem 0.6rem' }}
               >
-                {[10, 15, 20, 30].map((n) => (
+                {[10, 15, 20, 30].map(n => (
                   <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* ← NEW: Region dropdown */}
+            <div>
+              <label style={{ color: '#aaa', fontSize: '0.8rem', display: 'block', marginBottom: '4px' }}>
+                Region
+              </label>
+              <select
+                value={region}
+                onChange={e => setRegion(e.target.value)}
+                style={{ background: '#1e1e2e', color: '#fff', border: '1px solid #444', borderRadius: '6px', padding: '0.35rem 0.6rem' }}
+              >
+                {REGION_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
@@ -286,7 +228,7 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
               <Tooltip
                 formatter={(val, name, props) => [
                   `${val.toLocaleString()} (${props.payload.share.toFixed(1)}% of FB pop)`,
-                  'Estimate',
+                  'Estimate'
                 ]}
                 contentStyle={{ background: '#1e1e2e', border: '1px solid #444', color: '#fff' }}
               />
@@ -300,6 +242,7 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
         </>
       )}
 
+
       {mode === 'by_country' && (
         <>
           <div style={{ position: 'relative', maxWidth: '360px', marginBottom: '1.5rem', zIndex: 20 }}>
@@ -310,7 +253,7 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
               type="text"
               placeholder="e.g. Cambodia, Portugal, Haiti..."
               value={countrySearch}
-              onChange={(e) => setCountrySearch(e.target.value)}
+              onChange={e => setCountrySearch(e.target.value)}
               style={{
                 width: '100%',
                 background: '#1e1e2e',
@@ -318,7 +261,7 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
                 border: '1px solid #444',
                 borderRadius: '6px',
                 padding: '0.4rem 0.6rem',
-                fontSize: '0.9rem',
+                fontSize: '0.9rem'
               }}
             />
             {suggestions.length > 0 && (
@@ -333,9 +276,9 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
                 margin: 0,
                 padding: '0.25rem 0',
                 listStyle: 'none',
-                zIndex: 9999,
+                zIndex: 9999
               }}>
-                {suggestions.map((s) => (
+                {suggestions.map(s => (
                   <li
                     key={s}
                     onMouseDown={(e) => {
@@ -346,10 +289,10 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
                       padding: '0.35rem 0.75rem',
                       cursor: 'pointer',
                       color: '#ccc',
-                      fontSize: '0.85rem',
+                      fontSize: '0.85rem'
                     }}
-                    onMouseEnter={(e) => { e.target.style.background = '#3a3a5c' }}
-                    onMouseLeave={(e) => { e.target.style.background = 'transparent' }}
+                    onMouseEnter={e => e.target.style.background = '#3a3a5c'}
+                    onMouseLeave={e => e.target.style.background = 'transparent'}
                   >
                     {s}
                   </li>
@@ -370,7 +313,7 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
                   <XAxis type="number" tick={{ fill: '#aaa', fontSize: 11 }} />
                   <YAxis dataKey="city" type="category" tick={{ fill: '#ccc', fontSize: 11 }} width={105} />
                   <Tooltip
-                    formatter={(val) => [`${val.toLocaleString()}`, 'Estimate']}
+                    formatter={val => [`${val.toLocaleString()}`, 'Estimate']}
                     contentStyle={{ background: '#1e1e2e', border: '1px solid #444', color: '#fff' }}
                   />
                   <Bar dataKey="estimate" radius={[0, 4, 4, 0]}>
