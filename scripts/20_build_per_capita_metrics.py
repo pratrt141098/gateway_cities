@@ -12,6 +12,7 @@ import argparse
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import country_converter as coco
 
 INTERIM   = Path("data/interim")
 PROCESSED = Path("data/processed")
@@ -90,70 +91,38 @@ def build_foreign_born_core(years):
     return out
 
 
-def build_country_of_origin(years):
-    print("→ country_of_origin")
-    frames = []
+import requests
 
-    # B05006 structure differs by year — melt to long format (city, year, country, estimate)
-    COUNTRY_MAP = {
-        # Stable variable codes that exist across all years
-        # Format: variable_code → country label
-        "B05006_002E": "Europe",
-        "B05006_015E": "Asia",
-        "B05006_047E": "Africa",
-        "B05006_057E": "Oceania",
-        "B05006_060E": "Americas",
-        "B05006_061E": "Latin America",
-        "B05006_069E": "Caribbean",
-        "B05006_097E": "Central America",
-        "B05006_107E": "South America",
-        # Key individual countries stable across 2012-2024
-        "B05006_016E": "China (excl. HK & Taiwan)",
-        "B05006_017E": "Hong Kong",
-        "B05006_019E": "India",
-        "B05006_020E": "Iran",
-        "B05006_021E": "Iraq",
-        "B05006_025E": "Japan",
-        "B05006_026E": "Jordan",
-        "B05006_027E": "Korea",
-        "B05006_029E": "Lebanon",
-        "B05006_035E": "Philippines",
-        "B05006_036E": "Taiwan",
-        "B05006_038E": "Vietnam",
-        "B05006_040E": "Afghanistan",
-        "B05006_044E": "Bangladesh",
-        "B05006_048E": "Ethiopia",
-        "B05006_049E": "Egypt",
-        "B05006_053E": "Nigeria",
-        "B05006_054E": "Somalia",
-        "B05006_070E": "Cuba",
-        "B05006_071E": "Dominican Republic",
-        "B05006_075E": "Haiti",
-        "B05006_076E": "Jamaica",
-        "B05006_083E": "Trinidad and Tobago",
-        "B05006_098E": "El Salvador",
-        "B05006_099E": "Guatemala",
-        "B05006_100E": "Honduras",
-        "B05006_101E": "Mexico",
-        "B05006_108E": "Brazil",
-        "B05006_109E": "Colombia",
-        "B05006_110E": "Ecuador",
-        "B05006_112E": "Peru",
-        "B05006_003E": "United Kingdom",
-        "B05006_007E": "Greece",
-        "B05006_008E": "Italy",
-        "B05006_011E": "Poland",
-        "B05006_013E": "Portugal",
-        "B05006_114E": "Cambodia",
-        "B05006_115E": "Laos",
+def get_country_map(year: int = 2023) -> dict:
+    """Fetch B05006 variable labels from Census API — no hardcoding needed."""
+    r = requests.get(
+        f"https://api.census.gov/data/{year}/acs/acs5/variables.json",
+        timeout=30
+    )
+    variables = r.json()["variables"]
+    return {
+        k: v["label"].split("!!")[-1].strip()
+        for k, v in variables.items()
+        if k.startswith("B05006_")
+        and k.endswith("E")
+        and v.get("label", "").count("!!") >= 2  # skips top-level aggregates/continents
     }
 
+
+def build_country_of_origin(years):
+    print("→ country_of_origin")
+
+    print("  Fetching variable labels from Census API...")
+    country_map = get_country_map()
+    print(f"  Found {len(country_map)} country-level variables")
+
+    frames = []
     for year in years:
         df = load_year("b05006", year)
         if df is None:
             continue
         meta = meta_cols(df)
-        available = {k: v for k, v in COUNTRY_MAP.items() if k in df.columns}
+        available = {k: v for k, v in country_map.items() if k in df.columns}
         for code, country in available.items():
             rows = df[meta].copy()
             rows["country"]  = country
@@ -164,10 +133,29 @@ def build_country_of_origin(years):
         raise FileNotFoundError("No b05006 data found")
 
     out = pd.concat(frames, ignore_index=True)
-    out = out[out["estimate"].notna() & (out["estimate"] > 0)]
+    out = out[out["estimate"].notna()]
     out = add_city_type(out)
+
+    # --- ADD THIS BLOCK ---
+    print("  Tagging regions with coco...")
+    cc = coco.CountryConverter()
+    out["region"] = cc.pandas_convert(
+        out["country"],
+        to="continent",
+        not_found=None
+    )
+    out["region"] = out["region"].apply(lambda x: x[0] if isinstance(x, list) else x)
+    print("Region value counts:")
+    print(out["region"].value_counts().head(10))
+    print(f"Sample rows with Americas: {len(out[out['region'] == 'Americas'])}")
+
+
+    print(f"  ✓ {out['region'].notna().sum()} rows tagged with region")
+    # ----------------------
+
     out.to_parquet(PROCESSED / "country_of_origin.parquet", index=False)
     print(f"  ✓ {len(out)} rows ({out['year'].nunique()} years, {out['country'].nunique()} countries)")
+
 
 
 def build_education(years):
@@ -296,3 +284,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

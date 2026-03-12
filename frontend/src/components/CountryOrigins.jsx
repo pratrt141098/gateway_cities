@@ -8,6 +8,42 @@ import {
 const ACCENT = '#4e9af1'
 const ACCENT2 = '#f1914e'
 
+const NORTH_AMERICA_ORIGINS = new Set([
+  'Bahamas',
+  'Barbados',
+  'Belize',
+  'Canada',
+  'Costa Rica',
+  'Cuba',
+  'Dominica',
+  'Dominican Republic',
+  'El Salvador',
+  'Grenada',
+  'Guatemala',
+  'Haiti',
+  'Honduras',
+  'Jamaica',
+  'Mexico',
+  'Nicaragua',
+  'Panama',
+  'St. Lucia',
+  'St. Vincent and the Grenadines',
+  'Trinidad and Tobago',
+])
+
+const SOUTH_AMERICA_ORIGINS = new Set([
+  'Argentina',
+  'Bolivia',
+  'Brazil',
+  'Chile',
+  'Colombia',
+  'Ecuador',
+  'Guyana',
+  'Peru',
+  'Uruguay',
+  'Venezuela',
+])
+
 const NON_COUNTRY_LABELS = new Set([
   'Africa',
   'Europe',
@@ -43,6 +79,16 @@ const isRealCountry = (name) => {
   return !NON_COUNTRY_LABELS.has(String(name).trim())
 }
 
+const REGION_OPTIONS = [
+  { value: 'all',       label: 'All regions' },
+  { value: 'Africa',    label: 'Africa' },
+  { value: 'North America', label: 'North America' },
+  { value: 'South America', label: 'South America' },
+  { value: 'Asia',      label: 'Asia' },
+  { value: 'Europe',    label: 'Europe' },
+  { value: 'Oceania',   label: 'Oceania' },
+]
+
 export default function CountryOrigins({ selectedCities, allCities = [] }) {
   const [mode, setMode] = useState('by_city')
   const [allData, setAllData] = useState([])
@@ -57,6 +103,27 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
   )
   const [countrySearch, setCountrySearch] = useState('')
   const [topN, setTopN] = useState(15)
+
+const [region, setRegion] = useState('all')
+
+const filteredData = useMemo(() => {
+  if (region === 'all') return allData
+
+  if (region === 'North America') {
+    return allData.filter(
+      r => r.region === 'America' && NORTH_AMERICA_ORIGINS.has(String(r.country).trim())
+    )
+  }
+
+  if (region === 'South America') {
+    return allData.filter(
+      r => r.region === 'America' && SOUTH_AMERICA_ORIGINS.has(String(r.country).trim())
+    )
+  }
+
+  return allData.filter(r => r.region === region)
+}, [allData, region])
+
 
   useEffect(() => {
     if (selectedCities.length === 1) {
@@ -90,46 +157,36 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
   }, [cityNames])
 
   const byCityData = useMemo(() => {
-    const rows = allData.filter(r => r.city === selectedCity && r.estimate > 0)
+    const rows = filteredData.filter(r => r.city === selectedCity && r.estimate > 0)
     const total = rows.reduce((s, r) => s + r.estimate, 0)
-
     return rows
-      .map(r => ({
-        ...r,
-        share: total > 0 ? (r.estimate / total) * 100 : 0,
-      }))
+      .map(r => ({ ...r, share: total > 0 ? (r.estimate / total) * 100 : 0 }))
       .sort((a, b) => b.estimate - a.estimate)
       .slice(0, topN)
-  }, [allData, selectedCity, topN])
+  }, [filteredData, selectedCity, topN])
 
   const byCountryData = useMemo(() => {
     if (!countrySearch.trim()) return []
-
     const q = countrySearch.toLowerCase()
     const matched = [...new Set(
-      allData
-        .filter(r => r.country?.toLowerCase().includes(q))
-        .map(r => r.country)
+      filteredData.filter(r => r.country?.toLowerCase().includes(q)).map(r => r.country)
     )]
-
     if (!matched.length) return []
-
     const country = matched.find(c => c.toLowerCase() === q) || matched[0]
-
-    return allData
+    return filteredData
       .filter(r => r.country === country && r.estimate > 0)
       .sort((a, b) => b.estimate - a.estimate)
-  }, [allData, countrySearch])
+  }, [filteredData, countrySearch])
 
   const suggestions = useMemo(() => {
     if (!countrySearch.trim() || countrySearch.length < 2) return []
-
     const q = countrySearch.toLowerCase()
-    return [...new Set(allData.map(r => r.country))]
+    return [...new Set(filteredData.map(r => r.country))]
       .filter(c => c?.toLowerCase().includes(q))
       .sort()
       .slice(0, 8)
-  }, [allData, countrySearch])
+  }, [filteredData, countrySearch])
+
 
   if (loading) {
     return <div className="placeholder"><p>Loading country data...</p></div>
@@ -169,13 +226,7 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
               <select
                 value={selectedCity}
                 onChange={e => setSelectedCity(e.target.value)}
-                style={{
-                  background: '#1e1e2e',
-                  color: '#fff',
-                  border: '1px solid #444',
-                  borderRadius: '6px',
-                  padding: '0.35rem 0.6rem'
-                }}
+                style={{ background: '#1e1e2e', color: '#fff', border: '1px solid #444', borderRadius: '6px', padding: '0.35rem 0.6rem' }}
               >
                 {cityNames.map(city => (
                   <option key={city} value={city}>{city}</option>
@@ -190,16 +241,26 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
               <select
                 value={topN}
                 onChange={e => setTopN(Number(e.target.value))}
-                style={{
-                  background: '#1e1e2e',
-                  color: '#fff',
-                  border: '1px solid #444',
-                  borderRadius: '6px',
-                  padding: '0.35rem 0.6rem'
-                }}
+                style={{ background: '#1e1e2e', color: '#fff', border: '1px solid #444', borderRadius: '6px', padding: '0.35rem 0.6rem' }}
               >
                 {[10, 15, 20, 30].map(n => (
                   <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* ← NEW: Region dropdown */}
+            <div>
+              <label style={{ color: '#aaa', fontSize: '0.8rem', display: 'block', marginBottom: '4px' }}>
+                Region
+              </label>
+              <select
+                value={region}
+                onChange={e => setRegion(e.target.value)}
+                style={{ background: '#1e1e2e', color: '#fff', border: '1px solid #444', borderRadius: '6px', padding: '0.35rem 0.6rem' }}
+              >
+                {REGION_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
@@ -230,6 +291,7 @@ export default function CountryOrigins({ selectedCities, allCities = [] }) {
           </ResponsiveContainer>
         </>
       )}
+
 
       {mode === 'by_country' && (
         <>
