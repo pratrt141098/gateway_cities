@@ -50,3 +50,16 @@ export async function fetchStateAverages() {
   if (!res.ok) throw new Error('Failed to fetch state averages')
   return res.json()
 }
+
+export async function fetchChat(message) {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || "Chat request failed");
+  }
+  return data;
+}
