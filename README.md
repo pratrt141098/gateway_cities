@@ -1,6 +1,8 @@
 # Massachusetts Gateway Cities Dashboard
 
-An interactive data dashboard for exploring foreign-born population demographics across Massachusetts' 26 Gateway Cities using American Community Survey (ACS) 5-year estimates (2012–2024). Built for journalists and researchers to analyze immigration trends, economic assimilation, and community demographics.
+An interactive data dashboard for exploring foreign-born population demographics across Massachusetts' 26 Gateway Cities using American Community Survey (ACS) 5-year estimates (2012–2024). Built for journalists and researchers to analyze immigration trends, economic assimilation, and community demographics. In partnership with GBH Boston with support from MassMutual Boston.
+
+Finished product at https://dd4g-gatewayscities.up.railway.app/
 
 ---
 
