@@ -1247,9 +1247,8 @@ def _llm_rewrite(message: str, base_answer: str, analysis: Dict[str, Any]) -> st
     if text:
       return f"Interpretation:\n\n{text}"
     return base_answer
-  except Exception as e:
-    # For now, surface Gemini errors in the answer so we can debug setup.
-    return base_answer + f"\n\n[Gemini error: {e}]"
+  except Exception:
+    return base_answer
 
 
 def _llm_general_answer(message: str, fallback: str) -> str:

@@ -1,5 +1,4 @@
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 from dotenv import load_dotenv
 try:
     from backend.services import data_store, chat_service
@@ -10,8 +9,6 @@ except ModuleNotFoundError:
 load_dotenv()
 
 app = Flask(__name__)
-
-CORS(app)
 
 @app.get("/api/health")
 def health():
@@ -70,49 +67,58 @@ def time_series():
 
 @app.post("/api/chat")
 def chat():
-    payload = request.get_json(silent=True) or {}
-    message = (payload.get("message") or "").strip()
-    if not message:
-        return jsonify({"error": "Missing message"}), 400
+    payload = request.get_json(silent=True)
+
+    # Validate request body
+    if not isinstance(payload, dict):
+        return jsonify({
+            "error": "Expected a JSON object"
+        }), 400
+
+    message = payload.get("message")
+
+    if not isinstance(message, str) or not message.strip():
+        return jsonify({
+            "error": "Message must be a non-empty string"
+        }), 400
+
+    message = message.strip()
+
+    if len(message) > 2000:
+        return jsonify({
+            "error": "Message exceeds 2000 characters"
+        }), 400
+
     try:
-        return jsonify(chat_service.chat(message))
-    except Exception as e:
-        msg = str(e)
-        if "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
-            return jsonify(
-                {
-                    "answer": (
-                        "The Gemini API key is configured, but the project has no available "
-                        "Gemini quota (RESOURCE_EXHAUSTED). Please enable billing or switch "
-                        "to a project / key with active Gemini quota, then try again."
-                    )
-                }
-            ), 200
-        if "NOT_FOUND" in msg and "gemini" in msg.lower():
-            return jsonify(
-                {
-                    "answer": (
-                        "The configured Gemini model name is not available for this project. "
-                        "Please confirm that the model 'gemini-1.5-flash' is enabled for your "
-                        "API key, or switch to another supported Gemini model."
-                    )
-                }
-            ), 200
-        return jsonify(
-            {
-                "answer": (
-                    "The chatbot backend hit an internal error. "
-                    f"Details: {msg}"
-                )
-            }
-        ), 200
-import os
-print("RUNNING FILE:", os.path.abspath(__file__))
-print("URL MAP:", app.url_map)
+        result = chat_service.chat(message)
+
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get("answer"), str)
+        ):
+            raise ValueError("Invalid chat service response")
+
+        return jsonify(result), 200
+
+    except Exception as exc:
+        app.logger.error(
+            "Chat request failed (%s)",
+            type(exc).__name__
+        )
+
+        return jsonify({
+            "error": "Chat service temporarily unavailable"
+        }), 500
+    
+
 
 if __name__ == "__main__":
     import os
-    port = int(os.environ.get("PORT", 3000))
-    print(f"Running at http://localhost:{port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
-    
+
+    port = int(os.getenv("PORT", "3000"))
+
+    app.run(
+        host="127.0.0.1",
+        port=port,
+        debug=False,
+    )
