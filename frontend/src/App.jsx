@@ -8,15 +8,11 @@ import TrendsView from "./components/TrendsView";
 import ChatBot from "./components/ChatBot";
 import { fetchCities, fetchForeignBorn, fetchMapStats } from "./api/cities";
 
-const normalizeCityType = (city) => {
-  const cityName = String(city || "").trim();
-  return GATEWAY_CITIES.has(cityName) ? "gateway" : "other";
-};
 
 const normalizeRows = (rows = []) =>
   rows.map((r) => ({
     ...r,
-    city_type: normalizeCityType(r.city),
+    city_type: r.city_type ?? "other",
   }));
 
 const GATEWAY_CITIES = new Set([
@@ -165,10 +161,12 @@ export default function App() {
   const sorted = [...foreignBorn]
     .map((d) => ({
       ...d,
-      city_type: gatewayCitySet.has(d.city) ? "gateway" : "other",
+      display_type: gatewayCitySet.has(d.city)
+        ? "gateway"
+        : "other",
     }))
     .sort((a, b) => (b.fb_pct ?? 0) - (a.fb_pct ?? 0));
-
+  
   const overviewData = (
     gatewayOnly ? sorted.filter((d) => gatewayCitySet.has(d.city)) : sorted
   ).slice(0, topN);
@@ -382,7 +380,7 @@ export default function App() {
                     <span className="bar-label">{d.city}</span>
                     <div className="bar-track">
                       <div
-                        className={`bar-fill ${d.city_type}`}
+                        className={`bar-fill ${d.display_type}`}
                         style={{
                           width: `${(Math.min(d.fb_pct ?? 0, 60) / 60) * 100}%`,
                         }}
