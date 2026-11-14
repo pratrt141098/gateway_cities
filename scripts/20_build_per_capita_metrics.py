@@ -8,11 +8,13 @@ Usage:
 """
 
 from __future__ import annotations
+
 import argparse
 from pathlib import Path
 import pandas as pd
 import numpy as np
 import country_converter as coco
+from city_config import FIPS_TO_CITY, CITY_TYPE
 
 INTERIM   = Path("data/interim")
 PROCESSED = Path("data/processed")
@@ -31,10 +33,34 @@ CITY_TYPE_OVERRIDES = {
 
 def load_year(table: str, year: int) -> pd.DataFrame | None:
     path = INTERIM / str(year) / f"{table}.parquet"
+
     if not path.exists():
         return None
+
     df = pd.read_parquet(path)
+
+    # Standardize geography identifiers
+    df["GEO_ID"] = df["GEO_ID"].astype(str).str.strip()
+
+    # Keep only selected cities
+    df = df[df["GEO_ID"].isin(FIPS_TO_CITY)].copy()
+
+    if df.empty:
+        raise ValueError(
+            f"No target cities found in {path}"
+        )
+
+    # Validate one record per place and table
+    if df["GEO_ID"].duplicated().any():
+        raise ValueError(
+            f"Duplicate GEO_ID values found in {path}"
+        )
+
+    # Apply canonical geography and classifications
+    df["city"] = df["GEO_ID"].map(FIPS_TO_CITY)
+    df["city_type"] = df["city"].map(CITY_TYPE)
     df["year"] = year
+
     return df
 
 

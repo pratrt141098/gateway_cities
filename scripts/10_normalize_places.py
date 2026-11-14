@@ -1,53 +1,10 @@
 import pandas as pd
 from pathlib import Path
+from city_config import CITY_FIPS, CITY_TYPE
 
 RAW     = Path("data/raw")
 INTERIM = Path("data/interim")
 INTERIM.mkdir(exist_ok=True)
-
-CITY_FIPS = {
-    "Attleboro":   "1600000US2502690",
-    "Barnstable":  "1600000US2503690",
-    "Brockton":    "1600000US2509000",
-    "Chelsea":     "1600000US2513205",
-    "Chicopee":    "1600000US2513660",
-    "Everett":     "1600000US2521990",
-    "Fall River":  "1600000US2523000",
-    "Fitchburg":   "1600000US2523875",
-    "Framingham":  "1600000US2524960",
-    "Haverhill":   "1600000US2529405",
-    "Holyoke":     "1600000US2530840",
-    "Lawrence":    "1600000US2534550",
-    "Leominster":  "1600000US2535075",
-    "Lowell":      "1600000US2537000",
-    "Lynn":        "1600000US2537490",
-    "Malden":      "1600000US2537875",
-    "Methuen":     "1600000US2540675",
-    "New Bedford": "1600000US2545000",
-    "Peabody":     "1600000US2552490",
-    "Pittsfield":  "1600000US2553960",
-    "Quincy":      "1600000US2555745",
-    "Revere":      "1600000US2556585",
-    "Salem":       "1600000US2559105",
-    "Springfield": "1600000US2567000",
-    "Taunton":     "1600000US2569170",
-    "Westfield":   "1600000US2576030",
-    "Worcester":   "1600000US2582000",
-    "Somerville":  "1600000US2562535",
-    "Weymouth":    "1600000US2578972",
-    "Marlborough": "1600000US2538715",
-    "Boston":      "1600000US2507000",
-    "Cambridge":   "1600000US2511000",
-}
-
-CITY_TYPE = {
-    name: (
-        "benchmark" if name in ["Boston", "Cambridge"]
-        else "comparison" if name in ["Somerville", "Weymouth", "Marlborough"]
-        else "gateway"
-    )
-    for name in CITY_FIPS
-}
 
 FILES = {
     "dp03":   "ACSDP5Y2024.DP03-Data.csv",

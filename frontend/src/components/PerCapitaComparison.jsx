@@ -49,9 +49,22 @@ const downloadCSV = (filename, rows) => {
 }
 
 export default function PerCapitaComparison({ selectedCities, allCities }) {
-  const [data, setData] = useState([])
+  const [request, setRequest] = useState({
+    key: null,
+    data: [],
+    error: null,
+  })
+
   const [metric, setMetric] = useState('fb_pct')
-  const [loading, setLoading] = useState(false)
+
+  const requestKey = JSON.stringify({
+    selectedCities,
+    allCities,
+  })
+
+  const loading = request.key !== requestKey
+
+  const data = loading ? [] : request.data
   const [topN, setTopN] = useState(15)
   const [gatewayOnly, setGatewayOnly] = useState(false)
 
@@ -64,12 +77,17 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
   ]
 
   useEffect(() => {
-    setLoading(true)
+    let cancelled = false
+
+    const {
+      selectedCities: selected,
+      allCities: available,
+    } = JSON.parse(requestKey)
 
     const citiesToFetch =
-      selectedCities.length > 0
-        ? selectedCities
-        : allCities.map((c) => c.city)
+      selected.length > 0
+        ? selected
+        : available.map((c) => c.city)
 
     Promise.all([
       fetchForeignBorn(),
@@ -79,7 +97,7 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
     ])
       .then(([fb, emp, edu, own]) => {
         const merged = citiesToFetch.map((city) => {
-          const cityMeta = allCities.find((c) => c.city === city) || {}
+          const cityMeta = available.find((c) => c.city === city) || {}
           const fbRow = fb.find((r) => r.city === city) || {}
           const empRow = emp.find((r) => r.city === city) || {}
           const eduRow = edu.find((r) => r.city === city) || {}
@@ -96,14 +114,30 @@ export default function PerCapitaComparison({ selectedCities, allCities }) {
           }
         })
 
-        setData(merged)
-        setLoading(false)
+        if (cancelled) return
+
+        setRequest({
+          key: requestKey,
+          data: merged,
+          error: null,
+        })
       })
       .catch((err) => {
+        if (cancelled) return
+
         console.error('Failed to load per capita comparison data:', err)
-        setLoading(false)
+
+        setRequest({
+          key: requestKey,
+          data: [],
+          error: err.message,
+        })
       })
-  }, [selectedCities, allCities])
+
+    return () => {
+      cancelled = true
+    }
+  }, [requestKey])
 
   const selectedMetric = METRICS.find((m) => m.key === metric)
 

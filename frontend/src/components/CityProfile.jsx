@@ -135,15 +135,38 @@ const downloadCSV = (filename, rows) => {
 }
 
 export default function CityProfile({ selectedCities }) {
-  const citiesToShow = selectedCities.length > 0 ? selectedCities : [DEFAULT_CITY]
-  const [profiles, setProfiles] = useState([])
-  const [stateAvg, setStateAvg] = useState(null)
-  const [origins, setOrigins] = useState({})
-  const [regionOrigins, setRegionOrigins] = useState({})
-  const [loading, setLoading] = useState(false)
+  const citiesKey = JSON.stringify(
+    selectedCities.length > 0 ? selectedCities : [DEFAULT_CITY]
+  )
 
+  const [request, setRequest] = useState({
+    key: null,
+    profiles: [],
+    stateAvg: null,
+    origins: {},
+    regionOrigins: {},
+    error: null,
+  })
+
+  const loading = request.key !== citiesKey
+
+  const {
+    profiles,
+    stateAvg,
+    origins,
+    regionOrigins,
+  } = loading
+      ? {
+        profiles: [],
+        stateAvg: null,
+        origins: {},
+        regionOrigins: {},
+      }
+      : request
+  
   useEffect(() => {
-    setLoading(true)
+    let cancelled = false
+    const citiesToShow = JSON.parse(citiesKey)
 
     const cityFetches = citiesToShow.map((city) =>
       Promise.all([
@@ -229,23 +252,42 @@ export default function CityProfile({ selectedCities }) {
           regionOrigs[r.profile.city] = r.regions
         })
 
-        setProfiles(profs)
-        setOrigins(origs)
-        setRegionOrigins(regionOrigs)
-        setStateAvg({
-          fb_pct: averageOf(allFb, 'fb_pct'),
-          unemployment_rate: averageOf(allEmp, 'unemployment_rate'),
-          bachelors_pct: averageOf(allEdu, 'bachelors_pct'),
-          homeownership_pct: averageOf(allOwn, 'homeownership_pct'),
-          median_household_income: averageOf(allEmp, 'median_household_income'),
+        if (cancelled) return
+
+        setRequest({
+          key: citiesKey,
+          profiles: profs,
+          origins: origs,
+          regionOrigins: regionOrigs,
+          stateAvg: {
+            fb_pct: averageOf(allFb, 'fb_pct'),
+            unemployment_rate: averageOf(allEmp, 'unemployment_rate'),
+            bachelors_pct: averageOf(allEdu, 'bachelors_pct'),
+            homeownership_pct: averageOf(allOwn, 'homeownership_pct'),
+            median_household_income: averageOf(allEmp, 'median_household_income'),
+          },
+          error: null,
         })
-        setLoading(false)
       })
       .catch((err) => {
+        if (cancelled) return
+
         console.error('Failed to load city profile:', err)
-        setLoading(false)
+
+        setRequest({
+          key: citiesKey,
+          profiles: [],
+          origins: {},
+          regionOrigins: {},
+          stateAvg: null,
+          error: err.message,
+        })
       })
-  }, [citiesToShow.join(',')])
+
+    return () => {
+      cancelled = true
+    }
+  }, [citiesKey])
 
   useEffect(() => {
     const handleDownload = (event) => {
