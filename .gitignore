@@ -1,5 +1,17 @@
+# macOS
 .DS_Store
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Environment variables
 .env
-.env.example
+.env.*
+!.env.example
+
+# Frontend
+node_modules/
+dist/
