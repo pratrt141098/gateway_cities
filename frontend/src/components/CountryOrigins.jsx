@@ -89,18 +89,40 @@ const REGION_OPTIONS = [
   { value: 'Oceania',   label: 'Oceania' },
 ]
 
-export default function CountryOrigins({ selectedCities, allCities = [] }) {
+const EMPTY_CITIES = []
+
+export default function CountryOrigins({
+  selectedCities,
+  allCities = EMPTY_CITIES,
+}) {
   const [mode, setMode] = useState('by_city')
-  const [allData, setAllData] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [request, setRequest] = useState({
+    key: null,
+    rows: [],
+    error: null,
+  })
 
   const cityNames = useMemo(() => {
     return [...new Set(allCities.map(c => c.city).filter(Boolean))].sort()
   }, [allCities])
 
-  const [selectedCity, setSelectedCity] = useState(
-    selectedCities.length === 1 ? selectedCities[0] : ''
-  )
+  const citiesKey = JSON.stringify(cityNames)
+
+  const loading =
+    cityNames.length > 0 && request.key !== citiesKey
+
+  const allData =
+    request.key === citiesKey ? request.rows : []
+
+  const [manualCity, setManualCity] = useState('')
+
+  const selectedCity =
+    selectedCities.length === 1
+      ? selectedCities[0]
+      : cityNames.includes(manualCity)
+        ? manualCity
+        : cityNames[0] ?? ''
+  
   const [countrySearch, setCountrySearch] = useState('')
   const [topN, setTopN] = useState(15)
 
@@ -124,37 +146,42 @@ const filteredData = useMemo(() => {
   return allData.filter(r => r.region === region)
 }, [allData, region])
 
-
-  useEffect(() => {
-    if (selectedCities.length === 1) {
-      setSelectedCity(selectedCities[0])
-    }
-  }, [selectedCities])
-
-  useEffect(() => {
-    if (!selectedCity && cityNames.length > 0) {
-      setSelectedCity(cityNames[0])
-    }
-  }, [cityNames, selectedCity])
-
   useEffect(() => {
     if (cityNames.length === 0) return
 
-    setLoading(true)
-    Promise.all(cityNames.map(city => fetchCountryOfOrigin(city)))
+    let cancelled = false
+    const names = JSON.parse(citiesKey)
+
+    Promise.all(names.map(city => fetchCountryOfOrigin(city)))
       .then(results => {
+        if (cancelled) return
+
         const rows = results
           .flat()
           .filter(r => r.estimate > 0 && isRealCountry(r.country))
 
-        setAllData(rows)
-        setLoading(false)
+        setRequest({
+          key: citiesKey,
+          rows,
+          error: null,
+        })
       })
       .catch(err => {
+        if (cancelled) return
+
         console.error('Failed to load country data:', err)
-        setLoading(false)
+
+        setRequest({
+          key: citiesKey,
+          rows: [],
+          error: err.message,
+        })
       })
-  }, [cityNames])
+
+    return () => {
+      cancelled = true
+    }
+  }, [citiesKey, cityNames.length])
 
   const byCityData = useMemo(() => {
     const rows = filteredData.filter(r => r.city === selectedCity && r.estimate > 0)
@@ -225,7 +252,7 @@ const filteredData = useMemo(() => {
               </label>
               <select
                 value={selectedCity}
-                onChange={e => setSelectedCity(e.target.value)}
+                onChange={e => setManualCity(e.target.value)}
                 style={{ background: '#1e1e2e', color: '#fff', border: '1px solid #444', borderRadius: '6px', padding: '0.35rem 0.6rem' }}
               >
                 {cityNames.map(city => (

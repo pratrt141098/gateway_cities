@@ -114,9 +114,29 @@ def fetch_table(
         url = f"{base}?{urlencode(params)}"
         try:
             with urlopen(url, timeout=30) as r:
-                payload = json.loads(r.read())
+                raw = r.read()
+                content_type = r.headers.get("Content-Type", "")
+
+                print(f"    URL: {url.split('&key=')[0]}")
+                print(f"    HTTP Status: {r.status}")
+                print(f"    Content-Type: {content_type}")
+                print(f"    Response Preview: {raw[:300]!r}")
+
+                if not raw.strip():
+                    raise RuntimeError("Census API returned an empty response")
+
+                payload = json.loads(raw)
+
         except HTTPError as exc:
-            raise RuntimeError(f"Census API HTTP {exc.code} → {url}")
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"Census API HTTP {exc.code}: {body[:500]}"
+            ) from exc
+
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Census API returned invalid JSON: {exc}"
+            ) from exc
 
         if not isinstance(payload, list) or len(payload) < 2:
             continue
@@ -173,7 +193,10 @@ def main():
     env = load_env()
     api_key = os.environ.get("CENSUS_API_KEY") or env.get("CENSUS_API_KEY", "")
     if not api_key:
-        print("⚠️  No CENSUS_API_KEY — proceeding without key (rate limited to 500 req/day)")
+        parser.error(
+            "CENSUS_API_KEY is required. "
+            "Add it to your .env file or environment variables."
+        )
 
     years  = [args.year] if args.year else YEARS
     tables = {args.table: TABLES[args.table]} if args.table else TABLES

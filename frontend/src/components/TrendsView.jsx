@@ -58,9 +58,17 @@ const downloadCSV = (filename, rows) => {
 
 export default function TrendsView({ selectedCities }) {
   const [metric, setMetric] = useState('fb_pct')
-  const [data, setData] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [cityFilter, setCityFilter] = useState('selected') // 'selected' | 'gateway' | 'all'
+
+  const [request, setRequest] = useState({
+    metric: null,
+    data: [],
+    error: null,
+  })
+
+  const loading = request.metric !== metric
+  const data = loading ? [] : request.data
+
+  const [cityFilter, setCityFilter] = useState('selected')
 
   const activeCities = useMemo(() => {
     if (cityFilter === 'selected' && selectedCities.length > 0) return selectedCities
@@ -69,16 +77,33 @@ export default function TrendsView({ selectedCities }) {
   }, [cityFilter, selectedCities])
 
   useEffect(() => {
-    setLoading(true)
+    let cancelled = false
+
     fetchTimeSeries({ metric })
       .then((rows) => {
-        setData(rows)
-        setLoading(false)
+        if (cancelled) return
+
+        setRequest({
+          metric,
+          data: rows,
+          error: null,
+        })
       })
       .catch((err) => {
+        if (cancelled) return
+
         console.error('Failed to load trends data:', err)
-        setLoading(false)
+
+        setRequest({
+          metric,
+          data: [],
+          error: err.message,
+        })
       })
+
+    return () => {
+      cancelled = true
+    }
   }, [metric])
 
   const chartData = useMemo(() => {
@@ -213,6 +238,12 @@ export default function TrendsView({ selectedCities }) {
       </div>
 
       {loading && <div style={{ color: '#aaa', padding: '2rem' }}>Loading...</div>}
+
+      {!loading && request.error && (
+        <div style={{ color: '#f87171', padding: '1rem' }}>
+          Failed to load trends: {request.error}
+        </div>
+      )}
 
       {!loading && chartData.length > 0 && (
         <>
