@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import urlopen
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 import pandas as pd
 
 INTERIM = Path("data/interim")
@@ -115,28 +115,32 @@ def fetch_table(
         try:
             with urlopen(url, timeout=30) as r:
                 raw = r.read()
-                content_type = r.headers.get("Content-Type", "")
-
-                print(f"    URL: {url.split('&key=')[0]}")
-                print(f"    HTTP Status: {r.status}")
-                print(f"    Content-Type: {content_type}")
-                print(f"    Response Preview: {raw[:300]!r}")
 
                 if not raw.strip():
-                    raise RuntimeError("Census API returned an empty response")
+                    raise RuntimeError(
+                        f"Empty Census API response: "
+                        f"dataset={dataset}, year={year}"
+                    )
 
                 payload = json.loads(raw)
 
         except HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(
-                f"Census API HTTP {exc.code}: {body[:500]}"
-            ) from exc
+                f"Census API request failed: HTTP {exc.code}, "
+                f"dataset={dataset}, year={year}"
+            ) from None
 
-        except json.JSONDecodeError as exc:
+        except (URLError, TimeoutError):
             raise RuntimeError(
-                f"Census API returned invalid JSON: {exc}"
-            ) from exc
+                f"Census API connection failed: "
+                f"dataset={dataset}, year={year}"
+            ) from None
+
+        except json.JSONDecodeError:
+            raise RuntimeError(
+                f"Census API returned invalid JSON: "
+                f"dataset={dataset}, year={year}"
+            ) from None
 
         if not isinstance(payload, list) or len(payload) < 2:
             continue
