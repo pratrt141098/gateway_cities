@@ -15,35 +15,6 @@ const normalizeRows = (rows = []) =>
     city_type: r.city_type ?? "other",
   }));
 
-const GATEWAY_CITIES = new Set([
-  "Attleboro",
-  "Barnstable",
-  "Brockton",
-  "Chelsea",
-  "Chicopee",
-  "Everett",
-  "Fall River",
-  "Fitchburg",
-  "Framingham",
-  "Haverhill",
-  "Holyoke",
-  "Lawrence",
-  "Leominster",
-  "Lowell",
-  "Lynn",
-  "Malden",
-  "Methuen",
-  "New Bedford",
-  "Peabody",
-  "Pittsfield",
-  "Quincy",
-  "Revere",
-  "Salem",
-  "Springfield",
-  "Taunton",
-  "Worcester",
-]);
-
 const downloadCSV = (filename, rows) => {
   if (!rows || !rows.length) return;
 
@@ -94,17 +65,6 @@ export default function App() {
           seen.add(c.city);
           return true;
         });
-
-        console.log("raw city types:", [
-          ...new Set(data.map((c) => c.city_type)),
-        ]);
-        console.log("normalized city types:", [
-          ...new Set(unique.map((c) => c.city_type)),
-        ]);
-        console.log(
-          "gateway cities after normalize:",
-          unique.filter((c) => c.city_type === "gateway").map((c) => c.city),
-        );
 
         setCities(unique);
         setLoading(false);
