@@ -56,22 +56,6 @@ Other methodological considerations:
 
 **References:** [U.S. Census ACS](https://www.census.gov/programs-surveys/acs) · [ACS comparison guidance](https://www.census.gov/programs-surveys/acs/guidance/comparing-acs-data.html) · [Massachusetts Gateway Cities designation](https://www.mass.gov/info-details/ffio-technical-assistance-guidance)
 
-## Architecture
-
-```mermaid
-flowchart TD
-    A[U.S. Census ACS API] --> B[Python extraction scripts]
-    B --> C[Intermediate Parquet by year and table]
-    C --> D[Metric processing and city classification]
-    D --> E[Processed Parquet datasets]
-    E --> F[Flask REST API]
-    F --> G[React dashboard]
-    F --> H[Deterministic chatbot analysis]
-    H --> I[Gemini API for response generation]
-    I --> G
-    J[City boundary GeoJSON] --> G
-```
-
 ## Technology Stack
 
 | Layer | Technologies |
