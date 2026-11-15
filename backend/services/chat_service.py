@@ -58,7 +58,6 @@ def _gateway_cities_set() -> set[str]:
     "Everett",
     "Fall River",
     "Fitchburg",
-    "Framingham",
     "Haverhill",
     "Holyoke",
     "Lawrence",
@@ -76,6 +75,7 @@ def _gateway_cities_set() -> set[str]:
     "Springfield",
     "Taunton",
     "Worcester",
+    "Westfield",
   }
 
 

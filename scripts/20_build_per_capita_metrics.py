@@ -22,15 +22,6 @@ PROCESSED.mkdir(exist_ok=True)
 
 YEARS = list(range(2012, 2025))
 
-CITY_TYPE_OVERRIDES = {
-    "Boston":      "benchmark",
-    "Cambridge":   "benchmark",
-    "Somerville":  "comparison",
-    "Weymouth":    "comparison",
-    "Marlborough": "comparison",
-}
-
-
 def load_year(table: str, year: int) -> pd.DataFrame | None:
     path = INTERIM / str(year) / f"{table}.parquet"
 
@@ -80,16 +71,25 @@ def num(df: pd.DataFrame, col: str) -> pd.Series:
 
 
 def add_city_type(df: pd.DataFrame) -> pd.DataFrame:
-    """Add city_type based on NAME if not already set."""
-    if "city_type" not in df.columns:
-        df["city_type"] = "other"
-    # Extract clean city name from NAME field e.g. "Lowell city, Massachusetts"
+    """Assign city types using the canonical city configuration."""
+
     if "city" not in df.columns:
-        df["city"] = df["NAME"].str.replace(r"\s+(city|town|CDP).*", "", regex=True).str.strip()
-    for city, ctype in CITY_TYPE_OVERRIDES.items():
-        df.loc[df["city"] == city, "city_type"] = ctype
-    # Default unset gateway cities (MA places not in overrides)
-    df["city_type"] = df["city_type"].fillna("other")
+        raise ValueError("Missing required column: city")
+
+    df = df.copy()
+    df["city_type"] = df["city"].map(CITY_TYPE)
+
+    if df["city_type"].isna().any():
+        unknown = sorted(
+            df.loc[df["city_type"].isna(), "city"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+        raise ValueError(
+            f"Unknown cities in dataset: {unknown}"
+        )
+
     return df
 
 
